@@ -11,8 +11,8 @@ extension Color {
     static let off = Color(red: 0.886, green: 0.412, blue: 0.290)
 }
 
-struct ContentView: View {
-    @StateObject private var tuner = TunerEngine()
+struct TunerView: View {
+    @ObservedObject var tuner: TunerEngine
 
     private var inTune: Bool { tuner.frequency != nil && abs(tuner.cents) <= 5 }
 
@@ -32,6 +32,7 @@ struct ContentView: View {
         }
         .foregroundColor(.fg)
         .onAppear { tuner.start() }
+        .onDisappear { tuner.stop() }
     }
 
     private var header: some View {

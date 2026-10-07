@@ -87,9 +87,7 @@ final class TunerEngine: ObservableObject {
     private func startEngine() {
         guard !engine.isRunning else { return }
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothA2DP])
-            try session.setActive(true)
+            AudioSession.activate()
 
             let input = engine.inputNode
             let format = input.outputFormat(forBus: 0)
@@ -102,7 +100,9 @@ final class TunerEngine: ObservableObject {
                 self.analysisQueue.async { self.ingest(chunk) }
             }
 
-            attachToneNode(sampleRate: engine.outputNode.outputFormat(forBus: 0).sampleRate)
+            if toneNode == nil {
+                attachToneNode(sampleRate: engine.outputNode.outputFormat(forBus: 0).sampleRate)
+            }
             engine.prepare()
             try engine.start()
             running = true
@@ -110,6 +110,17 @@ final class TunerEngine: ObservableObject {
         } catch {
             running = false
         }
+    }
+
+    func stop() {
+        guard engine.isRunning else { return }
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        running = false
+        analysisQueue.async { self.samples.removeAll() }
+        history.removeAll()
+        clearReading()
+        UIApplication.shared.isIdleTimerDisabled = false
     }
 
     // MARK: - Análise
