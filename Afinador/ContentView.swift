@@ -194,48 +194,59 @@ struct GaugeView: View {
     let cents: Int
     let inTune: Bool
 
+    private var needleColor: Color { inTune ? Color.ok : Color.brass }
+
+    private var angle: Double {
+        let c = Double(max(-50, min(50, cents)))
+        return c / 50.0 * 60.0
+    }
+
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            let center = CGPoint(x: w / 2, y: h - 10)
-            let radius = min(w / 2 - 24, h - 30)
-            ZStack {
-                // zona afinada
-                Path { p in
-                    p.addArc(center: center, radius: radius + 2,
-                             startAngle: .degrees(-90 - 6), endAngle: .degrees(-90 + 6), clockwise: false)
-                }
-                .stroke(Color.ok.opacity(0.35), lineWidth: 10)
+        Canvas { ctx, size in
+            let center = CGPoint(x: size.width / 2, y: size.height - 10)
+            let radius: CGFloat = min(size.width / 2 - 24, size.height - 30)
+            GaugeView.drawScale(ctx, center: center, radius: radius)
+            GaugeView.drawNeedle(ctx, center: center, radius: radius, degrees: angle, color: needleColor)
+        }
+        .animation(.easeOut(duration: 0.12), value: cents)
+    }
 
-                ForEach(Array(stride(from: -50, through: 50, by: 5)), id: \.self) { c in
-                    let major = c % 25 == 0
-                    let a = Double(c) / 50 * 60 * .pi / 180
-                    let r1 = radius - (major ? 16 : 9)
-                    Path { p in
-                        p.move(to: CGPoint(x: center.x + sin(a) * r1, y: center.y - cos(a) * r1))
-                        p.addLine(to: CGPoint(x: center.x + sin(a) * radius, y: center.y - cos(a) * radius))
-                    }
-                    .stroke(major ? Color.fg : Color.muted, lineWidth: major ? 2 : 1)
-                    if major {
-                        Text(c > 0 ? "+\(c)" : "\(c)")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.muted)
-                            .position(x: center.x + sin(a) * (radius + 14), y: center.y - cos(a) * (radius + 14))
-                    }
-                }
+    static func point(_ center: CGPoint, _ radius: CGFloat, _ radians: Double) -> CGPoint {
+        let x = center.x + CGFloat(sin(radians)) * radius
+        let y = center.y - CGFloat(cos(radians)) * radius
+        return CGPoint(x: x, y: y)
+    }
 
-                Path { p in
-                    p.move(to: center)
-                    p.addLine(to: CGPoint(x: center.x, y: center.y - radius + 4))
-                }
-                .stroke(inTune ? Color.ok : Color.brass, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                .rotationEffect(.degrees(Double(max(-50, min(50, cents))) / 50 * 60), anchor: UnitPoint(x: center.x / w, y: center.y / h))
-                .animation(.easeOut(duration: 0.12), value: cents)
+    static func drawScale(_ ctx: GraphicsContext, center: CGPoint, radius: CGFloat) {
+        var zone = Path()
+        zone.addArc(center: center, radius: radius + 2,
+                    startAngle: .degrees(-96), endAngle: .degrees(-84), clockwise: false)
+        ctx.stroke(zone, with: .color(Color.ok.opacity(0.35)), lineWidth: 10)
 
-                Circle().fill(inTune ? Color.ok : Color.brass)
-                    .frame(width: 14, height: 14)
-                    .position(center)
+        for c in stride(from: -50, through: 50, by: 5) {
+            let major: Bool = c % 25 == 0
+            let a: Double = Double(c) / 50.0 * 60.0 * Double.pi / 180.0
+            let inner: CGFloat = radius - (major ? 16 : 9)
+            var tick = Path()
+            tick.move(to: point(center, inner, a))
+            tick.addLine(to: point(center, radius, a))
+            let color: Color = major ? Color.fg : Color.muted
+            ctx.stroke(tick, with: .color(color), lineWidth: major ? 2 : 1)
+            if major {
+                let label: String = c > 0 ? "+\(c)" : "\(c)"
+                let text = Text(label).font(.system(size: 11, design: .monospaced)).foregroundColor(Color.muted)
+                ctx.draw(text, at: point(center, radius + 14, a))
             }
         }
+    }
+
+    static func drawNeedle(_ ctx: GraphicsContext, center: CGPoint, radius: CGFloat, degrees: Double, color: Color) {
+        let a: Double = degrees * Double.pi / 180.0
+        var needle = Path()
+        needle.move(to: center)
+        needle.addLine(to: point(center, radius - 4, a))
+        ctx.stroke(needle, with: .color(color), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+        let dot = Path(ellipseIn: CGRect(x: center.x - 7, y: center.y - 7, width: 14, height: 14))
+        ctx.fill(dot, with: .color(color))
     }
 }
