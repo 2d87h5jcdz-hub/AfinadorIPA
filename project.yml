@@ -1,0 +1,30 @@
+name: Afinador
+options:
+  bundleIdPrefix: com.afinador
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Afinador:
+    type: application
+    platform: iOS
+    sources: [Afinador]
+    info:
+      path: Afinador/Info.plist
+      properties:
+        CFBundleDisplayName: Afinador
+        NSMicrophoneUsageDescription: O Afinador usa o microfone para ouvir as cordas do violão. Nada é gravado.
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIUserInterfaceStyle: Dark
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.afinador.app
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGNING_ALLOWED: "NO"
