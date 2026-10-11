@@ -92,7 +92,7 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/Afinador.app Payload/
-          zip -qry Afinador.ipa Payload
+          zip -qry PestanaEstudio.ipa Payload
           if [ -d Payload/Afinador.app/Models/HTDemucs.mlmodelc ]; then
             echo "::notice::Modelo de IA embutido: Models/HTDemucs.mlmodelc ($(du -sh Payload/Afinador.app/Models/HTDemucs.mlmodelc | cut -f1)); arquivos: $(ls Payload/Afinador.app/Models/HTDemucs.mlmodelc | tr '\n' ' ')"
           else
@@ -101,5 +101,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Afinador-ipa
-          path: Afinador.ipa
+          name: PestanaEstudio-ipa
+          path: PestanaEstudio.ipa
