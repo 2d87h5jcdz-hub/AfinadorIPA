@@ -73,6 +73,21 @@ jobs:
             echo "::error::${msg}"
           done
 
+      - name: Mostrar avisos do código do app
+        if: always()
+        continue-on-error: true
+        run: |
+          [ -f build.log ] || exit 0
+          grep -E "/Afinador/.*\.swift:[0-9]+:[0-9]+: warning:" build.log | sed "s#$GITHUB_WORKSPACE/##" | sort -u > warnings.txt || true
+          echo "Avisos distintos: $(wc -l < warnings.txt)"
+          cat warnings.txt
+          head -60 warnings.txt | split -l 6 - wchunk_
+          for c in wchunk_*; do
+            [ -f "$c" ] || continue
+            msg=$(sed -e 's/%/%25/g' "$c" | awk '{printf "%s%%0A", $0}')
+            echo "::warning::${msg}"
+          done
+
       - name: Empacotar .ipa
         run: |
           mkdir -p Payload

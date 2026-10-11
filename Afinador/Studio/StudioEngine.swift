@@ -247,6 +247,7 @@ final class StudioEngine: ObservableObject {
             stopAudio()
             transport = .stopped
             trackLevels = [:]
+            if needsRebuild { rebuildEngineIfActive() }
         case .countIn, .recording:
             let reachedRecording = transport == .recording
             stopAudio()
@@ -507,7 +508,10 @@ final class StudioEngine: ObservableObject {
 
     private func micPermissionResolved(_ granted: Bool) {
         micGranted = granted
-        if granted && isActive { rebuildEngine() }
+        // Não reconstrói o grafo no meio da reprodução (mataria o som sem atualizar o transporte).
+        if granted && isActive {
+            if transport == .stopped { rebuildEngine() } else { needsRebuild = true }
+        }
         if recordAfterPermission {
             recordAfterPermission = false
             if granted { record() } else { fail(.microphoneDenied) }
