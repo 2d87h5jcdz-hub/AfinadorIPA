@@ -5,6 +5,14 @@ name: Modelo Demucs
 # O workflow "Gerar IPA" baixa esse asset (se existir) e embute no app.
 
 on:
+  # workflow_dispatch só aparece depois que este arquivo estiver no branch padrão (main);
+  # até lá, roda sozinho quando o conversor ou este workflow mudam no branch estudio.
+  push:
+    branches: [estudio]
+    paths:
+      - scripts/convert_demucs.py
+      - scripts/requirements-demucs.txt
+      - .github/workflows/demucs-model.yml
   workflow_dispatch:
     inputs:
       model:
@@ -41,8 +49,8 @@ jobs:
       - name: Converter e verificar
         run: |
           python scripts/convert_demucs.py \
-            --model "${{ inputs.model }}" \
-            --source "${{ inputs.source }}" \
+            --model "${{ inputs.model || 'htdemucs_6s' }}" \
+            --source "${{ inputs.source || 'auto' }}" \
             --out build/demucs
 
       - name: Compilar (.mlmodelc) e empacotar
@@ -60,7 +68,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          NOTES="HTDemucs (${{ inputs.model }}) em Core ML para o Afinador. Licença MIT (facebookresearch/demucs). Origem: ${{ inputs.source }}. Commit ${{ github.sha }}."
+          NOTES="HTDemucs (${{ inputs.model || 'htdemucs_6s' }}) em Core ML para o Afinador. Licença MIT (facebookresearch/demucs). Origem: ${{ inputs.source || 'auto' }}. Commit ${{ github.sha }}."
           if gh release view demucs-model >/dev/null 2>&1; then
             gh release upload demucs-model build/demucs/HTDemucs-mlmodelc.zip build/demucs/contract.json --clobber
             gh release edit demucs-model --notes "$NOTES"
