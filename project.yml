@@ -12,16 +12,26 @@ targets:
   Afinador:
     type: application
     platform: iOS
-    sources: [Afinador]
+    sources:
+      - path: Afinador
+        excludes: ["Models", "Models/**"]
+      # Modelo de IA já compilado (baixado no CI da release demucs-model). Referência de pasta
+      # para manter a estrutura interna do .mlmodelc no bundle; ausente = app sem separador.
+      - path: Afinador/Models/HTDemucs.mlmodelc
+        type: folder
+        buildPhase: resources
+        optional: true
     info:
       path: Afinador/Info.plist
       properties:
         CFBundleDisplayName: Afinador
-        NSMicrophoneUsageDescription: O Afinador usa o microfone para ouvir as cordas do violão. Nada é gravado.
+        NSMicrophoneUsageDescription: O app usa o microfone para afinar o instrumento e gravar suas músicas. Nada sai do seu iPhone sem você compartilhar.
         UILaunchScreen: {}
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIUserInterfaceStyle: Dark
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.afinador.app

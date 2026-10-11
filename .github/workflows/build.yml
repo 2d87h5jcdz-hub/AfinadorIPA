@@ -14,6 +14,23 @@ jobs:
       - name: Instalar XcodeGen
         run: brew install xcodegen
 
+      - name: Baixar modelo de IA (Demucs), se existir
+        # Nunca falha o build: sem release/asset (ou zip inválido), o app sai sem o modelo.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          rm -rf /tmp/demucs Afinador/Models && mkdir -p /tmp/demucs
+          if gh release download demucs-model -R "$GITHUB_REPOSITORY" -p '*.zip' -D /tmp/demucs 2>/dev/null; then
+            mkdir -p Afinador/Models
+            for z in /tmp/demucs/*.zip; do unzip -oq "$z" -d Afinador/Models || echo "zip inválido: $z"; done
+            ls -la Afinador/Models
+          else
+            echo "sem modelo (release demucs-model não existe) — o app sai sem o separador de IA"
+          fi
+          exit 0
+
       - name: Gerar projeto Xcode
         run: xcodegen generate
 
@@ -33,8 +50,25 @@ jobs:
       - name: Mostrar erros de compilação
         if: failure()
         run: |
-          grep -E "error:" build.log | sort -u | head -10 | while IFS= read -r line; do
-            echo "::error::${line}"
+          # GitHub aceita só 10 anotações de erro por step: agrupa 6 erros (com a linha do código) por anotação.
+          grep -E "(error|fatal error):" build.log | grep -v "^\*\*" | sort -u | head -60 > errors.txt || true
+          echo "Total de linhas de erro distintas: $(grep -cE "(error|fatal error):" build.log | head -1)"
+          : > annotated.txt
+          while IFS= read -r line; do
+            ctx=""
+            if [[ "$line" =~ ^(/[^:]+):([0-9]+):([0-9]+):\ (fatal\ )?error: ]]; then
+              f="${BASH_REMATCH[1]}"; n="${BASH_REMATCH[2]}"
+              ctx=$(sed -n "${n}p" "$f" 2>/dev/null | sed 's/^[[:space:]]*//' | cut -c1-160)
+              line="${line#$GITHUB_WORKSPACE/}"
+            fi
+            echo "${line} ⟶ ${ctx}" >> annotated.txt
+          done < errors.txt
+          cat annotated.txt
+          split -l 6 annotated.txt chunk_
+          for c in chunk_*; do
+            [ -f "$c" ] || continue
+            msg=$(sed -e 's/%/%25/g' "$c" | awk '{printf "%s%%0A", $0}')
+            echo "::error::${msg}"
           done
 
       - name: Empacotar .ipa

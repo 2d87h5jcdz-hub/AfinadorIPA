@@ -12,9 +12,11 @@ enum AudioSession {
     }
 }
 
+@MainActor
 struct ContentView: View {
     @StateObject private var tuner = TunerEngine()
     @StateObject private var metronome = Metronome()
+    @StateObject private var studio = StudioEngine()
     @State private var tab = 0
 
     init() {
@@ -37,7 +39,17 @@ struct ContentView: View {
             MetronomeView(metronome: metronome)
                 .tabItem { Label("Metrônomo", systemImage: "metronome") }
                 .tag(2)
+            StudioView(studio: studio)
+                .tabItem { Label("Estúdio", systemImage: "waveform") }
+                .tag(3)
+            PracticeView(studio: studio, openStudio: { tab = 3 })
+                .tabItem { Label("Treino", systemImage: "music.note.list") }
+                .tag(4)
         }
         .tint(Color.brass)
+        .onChange(of: tab) { newTab in
+            // O metrônomo da aba própria vazaria nas gravações e brigaria com o clique do Estúdio/Treino.
+            if newTab >= 3 && metronome.playing { metronome.stop() }
+        }
     }
 }

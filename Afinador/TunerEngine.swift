@@ -75,10 +75,16 @@ final class TunerEngine: ObservableObject {
 
     // MARK: - Início
 
+    /// false depois de stop(): a resposta tardia do pedido de permissão não religa o microfone
+    /// quando o usuário já saiu da aba (outra aba pode estar usando a entrada).
+    private var wantsRunning = false
+
     func start() {
+        wantsRunning = true
         let session = AVAudioSession.sharedInstance()
         session.requestRecordPermission { granted in
             DispatchQueue.main.async {
+                guard self.wantsRunning else { return }
                 if granted { self.startEngine() } else { self.permissionDenied = true }
             }
         }
@@ -92,6 +98,9 @@ final class TunerEngine: ObservableObject {
             let input = engine.inputNode
             let format = input.outputFormat(forBus: 0)
             sampleRate = format.sampleRate
+            // O motor pode ter sido parado pelo sistema (troca de rota) com o tap ainda instalado:
+            // instalar de novo sem remover derruba o app.
+            input.removeTap(onBus: 0)
 
             input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
                 guard let self = self, let ch = buffer.floatChannelData?[0] else { return }
@@ -113,6 +122,7 @@ final class TunerEngine: ObservableObject {
     }
 
     func stop() {
+        wantsRunning = false
         guard engine.isRunning else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()

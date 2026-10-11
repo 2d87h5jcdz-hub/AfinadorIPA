@@ -1,0 +1,77 @@
+name: Modelo Demucs
+
+# Gera o modelo de IA do separador de instrumentos (HTDemucs, Meta, MIT) em Core ML,
+# compila para .mlmodelc e publica como asset da release "demucs-model".
+# O workflow "Gerar IPA" baixa esse asset (se existir) e embute no app.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Modelo (htdemucs_6s separa violão/guitarra e piano; htdemucs = 4 stems)"
+        type: choice
+        options: [htdemucs_6s, htdemucs]
+        default: htdemucs_6s
+      source:
+        description: "auto = converte com coremltools e, se falhar, usa a conversão pronta do Hugging Face"
+        type: choice
+        options: [auto, convert, huggingface]
+        default: auto
+
+permissions:
+  contents: write
+
+jobs:
+  model:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências (versões fixas)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scripts/requirements-demucs.txt
+          pip install --no-deps "demucs @ git+https://github.com/facebookresearch/demucs@e976d93ecc3865e5757426930257e200846a520a"
+
+      - name: Converter e verificar
+        run: |
+          python scripts/convert_demucs.py \
+            --model "${{ inputs.model }}" \
+            --source "${{ inputs.source }}" \
+            --out build/demucs
+
+      - name: Compilar (.mlmodelc) e empacotar
+        run: |
+          cd build/demucs
+          rm -rf compiled && mkdir compiled
+          xcrun coremlcompiler compile HTDemucs.mlpackage compiled
+          ls -la compiled
+          test -d compiled/HTDemucs.mlmodelc
+          (cd compiled && zip -qry ../HTDemucs-mlmodelc.zip HTDemucs.mlmodelc)
+          ls -la HTDemucs-mlmodelc.zip
+          cat contract.json
+
+      - name: Publicar na release demucs-model
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="HTDemucs (${{ inputs.model }}) em Core ML para o Afinador. Licença MIT (facebookresearch/demucs). Origem: ${{ inputs.source }}. Commit ${{ github.sha }}."
+          if gh release view demucs-model >/dev/null 2>&1; then
+            gh release upload demucs-model build/demucs/HTDemucs-mlmodelc.zip build/demucs/contract.json --clobber
+            gh release edit demucs-model --notes "$NOTES"
+          else
+            gh release create demucs-model build/demucs/HTDemucs-mlmodelc.zip build/demucs/contract.json \
+              --title "Modelo de IA (Demucs)" --notes "$NOTES" --target "${{ github.sha }}"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HTDemucs-model
+          path: |
+            build/demucs/HTDemucs-mlmodelc.zip
+            build/demucs/contract.json

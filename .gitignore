@@ -1,0 +1,11 @@
+# Modelo de IA baixado no CI (release demucs-model) — não versionar
+Afinador/Models/
+# Gerados
+Afinador.xcodeproj/
+build/
+DerivedData/
+Payload/
+*.ipa
+scripts/__pycache__/
+__pycache__/
+.DS_Store

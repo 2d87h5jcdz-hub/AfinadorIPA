@@ -1,0 +1,15 @@
+# Versões fixas para scripts/convert_demucs.py (macOS arm64, Python 3.11).
+# O pacote demucs é instalado à parte, sem dependências (ver demucs-model.yml),
+# fixado no commit e976d93 (facebookresearch/demucs, v4.1.0a2, nov/2023).
+numpy==1.26.4
+torch==2.4.0
+torchaudio==2.4.0
+coremltools==8.1
+einops==0.8.0
+julius==0.2.7
+openunmix==1.3.0
+dora-search==0.1.12
+omegaconf==2.3.0
+pyyaml==6.0.2
+tqdm==4.66.5
+huggingface_hub==0.26.2
