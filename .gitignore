@@ -1,5 +1,6 @@
 # Modelo de IA baixado no CI (release demucs-model) — não versionar
-Afinador/Models/
+Afinador/Models/*
+!Afinador/Models/.gitkeep
 # Gerados
 Afinador.xcodeproj/
 build/

@@ -78,12 +78,21 @@ enum DemucsError: LocalizedError {
 
 struct DemucsSeparator: StemSeparating {
 
+    /// O CI embute o modelo em Models/ (referência de pasta); a raiz do bundle também é aceita.
     static func modelURL() -> URL? {
-        for name in DemucsContract.modelNames {
-            if let url = Bundle.main.url(forResource: name, withExtension: "mlmodelc") { return url }
+        let dirs: [String?] = ["Models", nil]
+        for dir in dirs {
+            for name in DemucsContract.modelNames {
+                if let url = Bundle.main.url(forResource: name, withExtension: "mlmodelc", subdirectory: dir) {
+                    return url
+                }
+            }
         }
-        let all = Bundle.main.urls(forResourcesWithExtension: "mlmodelc", subdirectory: nil) ?? []
-        return all.first { $0.lastPathComponent.lowercased().contains("demucs") }
+        for dir in dirs {
+            let all = Bundle.main.urls(forResourcesWithExtension: "mlmodelc", subdirectory: dir) ?? []
+            if let url = all.first(where: { $0.lastPathComponent.lowercased().contains("demucs") }) { return url }
+        }
+        return nil
     }
 
     var isAvailable: Bool { Self.modelURL() != nil }

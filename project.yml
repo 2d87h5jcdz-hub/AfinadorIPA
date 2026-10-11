@@ -15,12 +15,12 @@ targets:
     sources:
       - path: Afinador
         excludes: ["Models", "Models/**"]
-      # Modelo de IA já compilado (baixado no CI da release demucs-model). Referência de pasta
-      # para manter a estrutura interna do .mlmodelc no bundle; ausente = app sem separador.
-      - path: Afinador/Models/HTDemucs.mlmodelc
+      # Modelo de IA já compilado (baixado no CI da release demucs-model) fica em Afinador/Models.
+      # Referência de pasta: mantém a estrutura interna do .mlmodelc e vai para Models/ no bundle.
+      # A pasta sempre existe (.gitkeep); sem modelo, o app sai sem o separador.
+      - path: Afinador/Models
         type: folder
         buildPhase: resources
-        optional: true
     info:
       path: Afinador/Info.plist
       properties:

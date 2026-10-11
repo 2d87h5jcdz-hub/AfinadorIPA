@@ -21,7 +21,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          rm -rf /tmp/demucs Afinador/Models && mkdir -p /tmp/demucs
+          rm -rf /tmp/demucs Afinador/Models/*.mlmodelc && mkdir -p /tmp/demucs Afinador/Models
           if gh release download demucs-model -R "$GITHUB_REPOSITORY" -p '*.zip' -D /tmp/demucs 2>/dev/null; then
             mkdir -p Afinador/Models
             for z in /tmp/demucs/*.zip; do unzip -oq "$z" -d Afinador/Models || echo "zip inválido: $z"; done
@@ -32,7 +32,9 @@ jobs:
           exit 0
 
       - name: Gerar projeto Xcode
-        run: xcodegen generate
+        run: |
+          mkdir -p Afinador/Models
+          xcodegen generate
 
       - name: Compilar (sem assinatura)
         run: |
