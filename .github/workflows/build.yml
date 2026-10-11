@@ -2,7 +2,7 @@ name: Gerar IPA
 
 on:
   push:
-    branches: [main]
+    branches: [main, estudio]
   workflow_dispatch:
 
 jobs:
