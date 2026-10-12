@@ -11,6 +11,7 @@ struct StudioTimelineLaneHeader: View, Equatable {
     let onArm: () -> Void
     let onToggleMute: () -> Void
     let onToggleSolo: () -> Void
+    let onToggleEffects: () -> Void
     let onOpen: () -> Void
 
     nonisolated static func == (lhs: StudioTimelineLaneHeader, rhs: StudioTimelineLaneHeader) -> Bool {
@@ -29,13 +30,8 @@ struct StudioTimelineLaneHeader: View, Equatable {
                     .accessibilityLabel(track.isMuted ? "Tirar \(track.name) do mudo" : "Deixar \(track.name) mudo")
                 StudioTimelineMiniChip(title: "S", isOn: track.isSolo, onColor: .brass, action: onToggleSolo)
                     .accessibilityLabel(track.isSolo ? "Desligar solo de \(track.name)" : "Solo: ouvir só \(track.name)")
+                fxChip
                 Spacer(minLength: 0)
-                if track.isImported {
-                    Image(systemName: "square.and.arrow.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.muted)
-                        .accessibilityLabel("Faixa importada")
-                }
             }
         }
         .padding(.leading, 6)
@@ -46,6 +42,33 @@ struct StudioTimelineLaneHeader: View, Equatable {
             Rectangle().fill(Color.line).frame(height: 1)
         }
         .opacity(track.isMuted ? 0.65 : 1)
+    }
+
+    /// FX: liga/desliga todos os efeitos e a afinação da faixa (ajustes ficam guardados).
+    private var fxChip: some View {
+        let has: Bool = track.hasEffects
+        let on: Bool = has && track.effectsOn
+        return Button(action: onToggleEffects) {
+            Text("FX")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .frame(width: 30, height: 22)
+                .background(RoundedRectangle(cornerRadius: 6).fill(on ? Color.brass : Color.bg))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(on ? Color.brass : Color.line))
+                .foregroundColor(on ? Color.bg : (has ? Color.fg : Color.muted.opacity(0.6)))
+                .overlay(alignment: .center) {
+                    if has && !track.effectsOn {
+                        Rectangle()
+                            .fill(Color.off)
+                            .frame(width: 22, height: 1.5)
+                            .rotationEffect(.degrees(-20))
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!has)
+        .accessibilityLabel(!has ? "Sem efeitos nesta faixa"
+                            : (track.effectsOn ? "Desligar efeitos de \(track.name)" : "Ligar efeitos de \(track.name)"))
     }
 
     private var armButton: some View {

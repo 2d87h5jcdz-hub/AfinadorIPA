@@ -48,6 +48,11 @@ struct StudioTrack: Identifiable, Codable, Equatable {
     var clips: [StudioClip] = []
     /// Afinação automática (correção sutil da voz, feita a partir da gravação; o original não muda).
     var pitch: PitchCorrection = PitchCorrection()
+    /// Botão FX da faixa: false = toca sem efeitos e sem afinação (os ajustes ficam guardados).
+    var effectsOn: Bool = true
+
+    /// A faixa tem algum efeito ou afinação configurados?
+    var hasEffects: Bool { effects != EffectSettings() || pitch.enabled }
 
     /// Fim do último clip (s); 0 para faixa vazia.
     var end: TimeInterval { clips.map(\.end).max() ?? 0 }
@@ -55,7 +60,7 @@ struct StudioTrack: Identifiable, Codable, Equatable {
 
 extension StudioTrack {
     private enum CodingKeys: String, CodingKey {
-        case id, name, fileName, volume, pan, isMuted, isSolo, offset, effects, isImported, duration, clips, pitch
+        case id, name, fileName, volume, pan, isMuted, isSolo, offset, effects, isImported, duration, clips, pitch, effectsOn
     }
 
     /// Decodifica v1 e v2: uma faixa antiga (fileName sem clips) vira um clip único.
@@ -74,6 +79,7 @@ extension StudioTrack {
         duration = try c.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0
         clips = try c.decodeIfPresent([StudioClip].self, forKey: .clips) ?? []
         pitch = try c.decodeIfPresent(PitchCorrection.self, forKey: .pitch) ?? PitchCorrection()
+        effectsOn = try c.decodeIfPresent(Bool.self, forKey: .effectsOn) ?? true
         if clips.isEmpty && !fileName.isEmpty && duration > 0 {
             // v1 gravava offset negativo (compensação de latência a partir do 0). Em v2 offset >= 0:
             // o começo antes do 0 vira fileStart (o que soa é o mesmo).

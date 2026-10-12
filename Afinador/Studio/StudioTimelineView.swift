@@ -255,6 +255,7 @@ struct StudioTimelineView: View {
             onArm: { toggleArm(id) },
             onToggleMute: { toggleMute(id) },
             onToggleSolo: { toggleSolo(id) },
+            onToggleEffects: { toggleEffects(id) },
             onOpen: { sheetTrack = StudioTrackSheetTarget(id: id) }
         )
         .equatable()
@@ -681,6 +682,12 @@ struct StudioTimelineView: View {
     private func toggleMute(_ id: UUID) {
         guard var track = tracks.first(where: { $0.id == id }) else { return }
         track.isMuted.toggle()
+        studio.updateTrack(track)
+    }
+
+    private func toggleEffects(_ id: UUID) {
+        guard var track = tracks.first(where: { $0.id == id }) else { return }
+        track.effectsOn.toggle()
         studio.updateTrack(track)
     }
 

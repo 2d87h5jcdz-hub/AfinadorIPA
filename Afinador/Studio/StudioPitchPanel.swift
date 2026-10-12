@@ -12,6 +12,35 @@ struct StudioPitchPanel: View {
     private var progress: Double? { studio.pitchProgress[trackID] }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if track?.effectsOn == false {
+                effectsOffBanner
+            }
+            pitchSection
+        }
+    }
+
+    /// Aviso quando o botão FX da faixa está desligado (os ajustes aqui não soam até religar).
+    private var effectsOffBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "speaker.slash")
+                .foregroundColor(.off)
+            Text("Os efeitos desta faixa estão desligados (botão FX).")
+                .font(.system(size: 13))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button("Ligar") {
+                guard var current = track else { return }
+                current.effectsOn = true
+                studio.updateTrack(current)
+            }
+            .font(.system(size: 14, weight: .bold))
+            .foregroundColor(.brass)
+        }
+        .studioPanel(padding: 12, stroke: Color.off.opacity(0.6))
+    }
+
+    private var pitchSection: some View {
         StudioEffectSection(title: "Afinação automática", systemImage: "tuningfork") {
             Toggle(isOn: binding(\.enabled)) {
                 VStack(alignment: .leading, spacing: 2) {

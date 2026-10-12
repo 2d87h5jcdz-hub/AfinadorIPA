@@ -1264,7 +1264,9 @@ final class StudioEngine: ObservableObject {
     /// Assinatura da afinação por faixa: se muda, os arquivos tocados mudam (reconstrói o grafo).
     private static func pitchLayout(_ p: StudioProject) -> [UUID: String] {
         var map: [UUID: String] = [:]
-        for track in p.tracks where track.pitch.enabled { map[track.id] = track.pitch.signature ?? "" }
+        for track in p.tracks where track.pitch.enabled {
+            map[track.id] = track.effectsOn ? (track.pitch.signature ?? "") : "fx-off"
+        }
         return map
     }
 

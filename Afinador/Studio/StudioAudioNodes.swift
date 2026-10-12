@@ -285,7 +285,8 @@ final class StudioTrackChain {
         output.pan = max(-1, min(1, track.pan))
         // Volume acima de 1 (até 1.5 ≈ +3.5 dB) vira ganho global do EQ.
         let boost: Float = volume > 1 ? 20 * log10(volume) : 0
-        effects.apply(track.effects, extraGainDB: boost)
+        // FX desligado: cadeia neutra (os ajustes da faixa continuam guardados).
+        effects.apply(track.effectsOn ? track.effects : EffectSettings(), extraGainDB: boost)
     }
 
     /// Agenda todos os clips a partir da posição `songPosition` da música.

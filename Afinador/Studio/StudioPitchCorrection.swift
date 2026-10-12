@@ -101,7 +101,7 @@ enum StudioPitchFiles {
 
     /// Clips como devem TOCAR: com a afinação ligada e o arquivo corrigido pronto, aponta para ele.
     static func playbackClips(for track: StudioTrack, folder: URL) -> [StudioClip] {
-        guard let signature = track.pitch.signature else { return track.clips }
+        guard track.effectsOn, let signature = track.pitch.signature else { return track.clips }
         let fm = FileManager.default
         return track.clips.map { clip in
             let tuned: String = tunedName(source: clip.fileName, signature: signature)
