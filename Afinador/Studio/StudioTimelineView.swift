@@ -15,6 +15,13 @@ final class StudioTimelineScrollBox {
     var zoomAnchor: (time: Double, screenX: CGFloat)?
     /// Zoom no começo da pinça (nil fora da pinça).
     var pinchBase: CGFloat?
+    /// Para rolar a tela sozinho enquanto o dedo está na borda da régua.
+    var proxy: ScrollViewProxy?
+    var edgeTimer: Timer?
+    /// Onde o dedo está na régua, em x da tela visível (0 = borda esquerda da área rolável).
+    var scrubScreenX: CGFloat = 0
+    /// Dedo na régua: quem rola a tela é a borda, não o "seguir a cabeça".
+    var isScrubbing = false
 }
 
 struct StudioTimelineOffsetKey: PreferenceKey {
@@ -154,6 +161,10 @@ struct StudioTimelineView: View {
                 selection = nil
             }
         }
+        .onDisappear {
+            box.isScrubbing = false
+            stopEdgeScroll()
+        }
         .onChange(of: selection) { _ in
             // Garante que a rolagem não fique travada se o clip arrastado sumir no meio do gesto.
             isDraggingClip = false
@@ -251,6 +262,7 @@ struct StudioTimelineView: View {
                 }
                 .simultaneousGesture(pinchGesture)
                 .onAppear {
+                    box.proxy = proxy
                     updateVisibleWidth(geo.size.width)
                     reveal(x: playheadX, proxy: proxy, animated: false)
                 }
@@ -479,9 +491,25 @@ struct StudioTimelineView: View {
     }
 
     /// Arrastar na régua: parado, a cabeça segue o dedo; tocando, mostra onde vai cair e pula ao soltar.
+    /// Com o dedo perto da borda, a tela rola sozinha e leva a cabeça junto.
     private func scrub(_ time: Double, ended: Bool) {
         if selection != nil { selection = nil }
-        guard !isRecordingLike else { return }
+        guard !isRecordingLike else {
+            box.isScrubbing = false
+            stopEdgeScroll()
+            return
+        }
+        box.scrubScreenX = CGFloat(max(0, time)) * pps - box.offset
+        box.isScrubbing = !ended
+        if ended {
+            stopEdgeScroll()
+        } else {
+            updateEdgeScroll()
+        }
+        applyScrub(time, ended: ended)
+    }
+
+    private func applyScrub(_ time: Double, ended: Bool) {
         let t: Double = max(0, time)
         if isStopped {
             studio.seek(to: t)
@@ -492,6 +520,59 @@ struct StudioTimelineView: View {
         } else {
             scrubPreview = t
         }
+    }
+
+    // MARK: Rolagem automática na borda da régua
+
+    private static let edgeZone: CGFloat = 48
+
+    /// Velocidade (pt/s) da rolagem automática para o dedo em `screenX`; 0 fora das bordas.
+    private func edgeSpeed(_ screenX: CGFloat) -> CGFloat {
+        let width: CGFloat = max(box.visibleWidth, 1)
+        let zone: CGFloat = min(Self.edgeZone, width / 4)
+        if screenX > width - zone {
+            let depth: CGFloat = min((screenX - (width - zone)) / zone, 1.5)
+            return 250 + 1200 * depth
+        }
+        if screenX < zone && box.offset > 0.5 {
+            let depth: CGFloat = min((zone - screenX) / zone, 1.5)
+            return -(250 + 1200 * depth)
+        }
+        return 0
+    }
+
+    private func updateEdgeScroll() {
+        if edgeSpeed(box.scrubScreenX) == 0 {
+            stopEdgeScroll()
+            return
+        }
+        guard box.edgeTimer == nil else { return }
+        let view = self
+        box.edgeTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
+            Task { @MainActor in
+                view.edgeTick()
+            }
+        }
+    }
+
+    private func stopEdgeScroll() {
+        box.edgeTimer?.invalidate()
+        box.edgeTimer = nil
+    }
+
+    private func edgeTick() {
+        let speed: CGFloat = edgeSpeed(box.scrubScreenX)
+        guard speed != 0, let proxy = box.proxy, !isRecordingLike else {
+            stopEdgeScroll()
+            return
+        }
+        let width: CGFloat = max(box.visibleWidth, 1)
+        let maxOffset: CGFloat = max(contentWidth - width, 0)
+        let newOffset: CGFloat = min(max(box.offset + speed / 60.0, 0), maxOffset)
+        guard abs(newOffset - box.offset) > 0.1 else { return }
+        scroll(toOffset: newOffset, proxy: proxy, animated: false)
+        let time: Double = Double((newOffset + box.scrubScreenX) / max(pps, 0.001))
+        applyScrub(time, ended: false)
     }
 
     private func seekFromTap(_ time: Double) {
@@ -555,6 +636,7 @@ struct StudioTimelineView: View {
     /// Mantém a cabeça visível: andando (com "seguir" ligado) vira a página perto da borda direita;
     /// parado, só rola se a cabeça foi parar fora da tela (ex.: "fim da faixa", voltar ao início).
     private func followPlayhead(position: Double, proxy: ScrollViewProxy) {
+        if box.isScrubbing { return }
         let x: CGFloat = CGFloat(position.isFinite ? max(position, 0) : 0) * pps
         let left: CGFloat = box.offset
         let width: CGFloat = max(box.visibleWidth, 1)
