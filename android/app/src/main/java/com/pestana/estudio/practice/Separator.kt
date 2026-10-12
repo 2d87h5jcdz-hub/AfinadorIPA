@@ -81,6 +81,13 @@ class ModelStore(filesDir: File) {
     }
 }
 
+private fun rssMb(): Long = try {
+    java.io.File("/proc/self/status").readLines().first { it.startsWith("VmRSS:") }
+        .filter { it.isDigit() }.toLong() / 1024
+} catch (_: Exception) {
+    -1
+}
+
 /** Roda o HTDemucs (ONNX Runtime, CPU) sobre a música inteira e grava um arquivo por stem. */
 class DemucsOnnxSeparator(private val model: File) {
 
@@ -101,6 +108,10 @@ class DemucsOnnxSeparator(private val model: File) {
         val opts = OrtSession.SessionOptions().apply {
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
             setIntraOpNumThreads(Runtime.getRuntime().availableProcessors().coerceIn(2, 6))
+            // Sem arena nem padrão de memória: a memória da inferência volta ao sistema entre
+            // segmentos (com a arena o pico chegava a ~3 GB e o Android matava o app).
+            setCPUArenaAllocator(false)
+            setMemoryPatternOptimization(false)
         }
         val session = env.createSession(model.path, opts)
         try {
@@ -134,6 +145,7 @@ class DemucsOnnxSeparator(private val model: File) {
             val mean = sum / n
             val std = if (n > 1) sqrt(((sq - n * mean * mean) / (n - 1)).coerceAtLeast(0.0)) else 1.0
 
+            var tensors: List<OnnxTensor>? = null
             val writers = kinds.map { PcmWriter(pcmCacheFor(it).also { f -> f.parentFile?.mkdirs() }) }
             try {
                 dsp.separate(
@@ -141,24 +153,35 @@ class DemucsOnnxSeparator(private val model: File) {
                     reader = { start, count, left, right -> song.read(start, count, left, right) },
                     predictor = { mag, mix, specOut, timeOut ->
                         val t0 = System.nanoTime()
-                        OnnxTensor.createTensor(env, FloatBuffer.wrap(mag), longArrayOf(1, 4, DemucsDsp.BINS.toLong(), T)).use { tMag ->
-                            OnnxTensor.createTensor(env, FloatBuffer.wrap(mix), longArrayOf(1, 2, segment.toLong())).use { tMix ->
-                                session.run(mapOf("mag" to tMag, "mix" to tMix)).use { res ->
-                                    (res.get("spec_out").get() as OnnxTensor).floatBuffer.get(specOut)
-                                    (res.get("time_out").get() as OnnxTensor).floatBuffer.get(timeOut)
-                                }
-                                android.util.Log.i("Pestana", "Demucs: segmento em %.1f s".format((System.nanoTime() - t0) / 1e9))
-                            }
+                        if (tensors == null) {
+                            // Entradas e saídas apontam para os mesmos buffers diretos em todo segmento.
+                            tensors = listOf(
+                                OnnxTensor.createTensor(env, mag, longArrayOf(1, 4, DemucsDsp.BINS.toLong(), T)),
+                                OnnxTensor.createTensor(env, mix, longArrayOf(1, 2, segment.toLong())),
+                                OnnxTensor.createTensor(env, specOut, longArrayOf(1, kinds.size.toLong(), 4, DemucsDsp.BINS.toLong(), T)),
+                                OnnxTensor.createTensor(env, timeOut, longArrayOf(1, kinds.size.toLong(), 2, segment.toLong())),
+                            )
                         }
+                        val t = tensors!!
+                        session.run(
+                            mapOf("mag" to t[0], "mix" to t[1]),
+                            mapOf("spec_out" to t[2], "time_out" to t[3]),
+                        ).close()
+                        android.util.Log.i(
+                            "Pestana",
+                            "Demucs: segmento em %.1f s, memória %d MB".format((System.nanoTime() - t0) / 1e9, rssMb()),
+                        )
                     },
                     writer = { data, count ->
                         for (s in kinds.indices) writers[s].write(data[s][0], data[s][1], count)
                     },
                     progress = { progress(0.9 * it) },
                     cancelled = cancelled,
+                    directBuffers = true,
                 )
             } finally {
                 writers.forEach { it.close() }
+                tensors?.forEach { it.close() }
             }
 
             // Cópia compactada (AAC) para guardar; o PCM fica no cache para tocar.

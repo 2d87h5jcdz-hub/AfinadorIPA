@@ -81,13 +81,13 @@ class DemucsDsp(val segment: Int, val sources: Int) {
      * Soma em [out] (tamanho L, a partir de outOff) o iSTFT do espectrograma em [spec]:
      * parte real em reOff e imaginária em imOff, cada uma (2048, T).
      */
-    fun istftAdd(spec: FloatArray, reOff: Int, imOff: Int, out: DoubleArray) {
+    fun istftAdd(spec: java.nio.FloatBuffer, reOff: Int, imOff: Int, out: DoubleArray) {
         java.util.Arrays.fill(olaBuf, 0.0)
         val scale = sqrt(NFFT.toDouble()) / NFFT // irfft (1/n) × sqrt(n_fft)
         for (t in 0 until frames) {
             for (f in 0 until BINS) {
-                re[f] = spec[reOff + f * frames + t].toDouble()
-                im[f] = spec[imOff + f * frames + t].toDouble()
+                re[f] = spec.get(reOff + f * frames + t).toDouble()
+                im[f] = spec.get(imOff + f * frames + t).toDouble()
             }
             re[BINS] = 0.0; im[BINS] = 0.0 // Nyquist
             im[0] = 0.0 // irfft ignora a parte imaginária do DC
@@ -102,10 +102,18 @@ class DemucsDsp(val segment: Int, val sources: Int) {
         for (i in 0 until segment) out[i] += olaBuf[istftStart + i] * invEnv[i]
     }
 
-    /** Modelo: (mag, mix) → (spec_out, time_out). */
+    /**
+     * Modelo: lê mag/mix e escreve spec_out/time_out. Buffers (diretos, no app) alocados uma
+     * vez só: o ONNX Runtime escreve a saída direto neles, sem cópias de 80 MB por segmento.
+     */
     fun interface Predictor {
-        fun predict(mag: FloatArray, mix: FloatArray, specOut: FloatArray, timeOut: FloatArray)
+        fun predict(mag: java.nio.FloatBuffer, mix: java.nio.FloatBuffer, specOut: java.nio.FloatBuffer, timeOut: java.nio.FloatBuffer)
     }
+
+    /** Aloca um buffer de [n] floats (direto, fora do heap Java, quando [direct]). */
+    fun buffer(n: Int, direct: Boolean): java.nio.FloatBuffer =
+        if (direct) java.nio.ByteBuffer.allocateDirect(n * 4).order(java.nio.ByteOrder.nativeOrder()).asFloatBuffer()
+        else java.nio.FloatBuffer.allocate(n)
 
     /** Lê [count] quadros estéreo a partir de [start] em left/right (já como float). */
     fun interface Reader {
@@ -130,6 +138,7 @@ class DemucsDsp(val segment: Int, val sources: Int) {
         writer: Writer,
         progress: (Double) -> Unit = {},
         cancelled: () -> Boolean = { false },
+        directBuffers: Boolean = false,
     ) {
         val L = segment
         val stride = ((1 - OVERLAP) * L).toInt()
@@ -141,8 +150,10 @@ class DemucsDsp(val segment: Int, val sources: Int) {
         val left = FloatArray(L)
         val right = FloatArray(L)
         val mag = FloatArray(magSize)
-        val specOut = FloatArray(specOutSize)
-        val timeOut = FloatArray(timeOutSize)
+        val magBuf = buffer(magSize, directBuffers)
+        val mixBuf = buffer(mixSize, directBuffers)
+        val specOut = buffer(specOutSize, directBuffers)
+        val timeOut = buffer(timeOutSize, directBuffers)
         val outBuf = Array(sources) { Array(2) { FloatArray(stride.coerceAtLeast(L)) } }
         val sd = if (std < 1e-8) 1.0 else std
         var written = 0L
@@ -163,11 +174,13 @@ class DemucsDsp(val segment: Int, val sources: Int) {
                 chunk[L + dst + i] = ((right[i] - mean) / sd).toFloat()
             }
             stft(chunk, mag)
-            predictor.predict(mag, chunk, specOut, timeOut)
+            magBuf.clear(); magBuf.put(mag); magBuf.rewind()
+            mixBuf.clear(); mixBuf.put(chunk); mixBuf.rewind()
+            predictor.predict(magBuf, mixBuf, specOut, timeOut)
             for (s in 0 until sources) for (c in 0 until 2) {
                 val e = est[s][c]
                 val tBase = (s * 2 + c) * L
-                for (i in 0 until L) e[i] = timeOut[tBase + i].toDouble()
+                for (i in 0 until L) e[i] = timeOut.get(tBase + i).toDouble()
                 val sBase = s * magSize
                 istftAdd(specOut, sBase + (2 * c) * BINS * frames, sBase + (2 * c + 1) * BINS * frames, e)
             }

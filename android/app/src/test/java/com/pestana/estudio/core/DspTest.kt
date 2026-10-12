@@ -52,8 +52,8 @@ class DspTest {
             },
             { mag, mix, spec, time ->
                 for (s in 0 until 2) {
-                    for (k in mag.indices) spec[s * dsp.magSize + k] = mag[k] * a[s]
-                    for (k in mix.indices) time[s * dsp.mixSize + k] = mix[k] * (1 - a[s])
+                    for (k in 0 until dsp.magSize) spec.put(s * dsp.magSize + k, mag.get(k) * a[s])
+                    for (k in 0 until dsp.mixSize) time.put(s * dsp.mixSize + k, mix.get(k) * (1 - a[s]))
                 }
             },
             { data, count ->
