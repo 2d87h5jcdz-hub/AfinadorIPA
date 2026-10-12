@@ -176,3 +176,11 @@ fun formatClock(t: Double, tenths: Boolean = true): String {
     val s = total - m * 60
     return if (tenths) "%d:%04.1f".format(m, s).replace(',', '.') else "%d:%02d".format(m, s.toInt())
 }
+
+/** "0:12.345" (posição exata, como no canto da régua do iOS). */
+fun formatClockMs(t: Double): String {
+    if (!t.isFinite() || t < 0) return "0:00.000"
+    val m = (t / 60).toInt()
+    val s = t - m * 60
+    return "%d:%06.3f".format(java.util.Locale.US, m, s)
+}

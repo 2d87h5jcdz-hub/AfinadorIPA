@@ -58,7 +58,7 @@ O app não está na App Store. Ele é distribuído como arquivo **.ipa**, que vo
 
 ## Android (em desenvolvimento)
 
-A versão para Android fica na pasta [`android/`](android/) (Kotlin + Jetpack Compose; o Estúdio usa C++ com Oboe). Já tem **as 5 abas**: Afinador, Acordes, Metrônomo, Estúdio (gravação em camadas com efeitos e amplificador NAM) e Treino (tom, velocidade, loop A-B e separação de instrumentos por IA, que baixa o modelo de ~115 MB na primeira vez).
+A versão para Android fica na pasta [`android/`](android/) (Kotlin + Jetpack Compose; o Estúdio usa C++ com Oboe). Tem **tudo o que a versão de iPhone tem**: Afinador, Acordes, Metrônomo, Estúdio (gravação em camadas, efeitos, amplificador NAM, afinação automática da voz e exportação) e Treino (tom, velocidade, loop A-B e separação de instrumentos por IA — o modelo de ~115 MB é baixado na primeira separação). O que está escrito abaixo para o iPhone vale para o Android; onde diz "app Arquivos", no Android é o seletor de arquivos do celular.
 
 No Android não há a limitação de 7 dias do iPhone: o app é um **.apk** comum, instalado uma vez e pronto.
 

@@ -6,7 +6,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -101,7 +105,7 @@ internal fun TracksSection(studio: StudioEngine) {
                 )
             }
         } else {
-            Timeline(studio, p, pxPerSec, follow, selected, onSelect = { selected = it }, onEdit = { editing = it })
+            Timeline(studio, p, pxPerSec, { pxPerSec = it.coerceIn(6f, 400f) }, follow, selected, onSelect = { selected = it }, onEdit = { editing = it })
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -149,6 +153,7 @@ private fun Timeline(
     studio: StudioEngine,
     p: StudioProject,
     pxPerSec: Float,
+    onZoom: (Float) -> Unit,
     follow: Boolean,
     selected: Pair<String, String>?,
     onSelect: (Pair<String, String>?) -> Unit,
@@ -176,13 +181,31 @@ private fun Timeline(
         // Cabeçalhos das faixas
         Column(Modifier.width(HEADER_W)) {
             Box(Modifier.height(RULER_H).padding(start = 8.dp), contentAlignment = Alignment.CenterStart) {
-                Text(formatClock(studio.position).let { it }, style = Type.mono(10.sp), color = Palette.muted)
+                Text(formatClockMs(studio.position), style = Type.mono(10.sp), color = Palette.muted)
             }
             p.tracks.forEachIndexed { i, t -> TrackHeader(studio, t, i + 1, onEdit) }
         }
         Box(Modifier.width(1.dp).height(RULER_H + LANE_H * p.tracks.size).background(Palette.line))
-        // Linha do tempo (rola na horizontal)
-        Column(Modifier.weight(1f).horizontalScroll(scroll)) {
+        // Linha do tempo (rola na horizontal; pinça com dois dedos = zoom)
+        val zoomState by rememberUpdatedState(pxPerSec)
+        Column(
+            Modifier
+                .weight(1f)
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        do {
+                            val ev = awaitPointerEvent(PointerEventPass.Initial)
+                            if (ev.changes.count { it.pressed } >= 2) {
+                                val z = ev.calculateZoom()
+                                if (z != 1f) onZoom(zoomState * z)
+                                ev.changes.forEach { it.consume() }
+                            }
+                        } while (ev.changes.any { it.pressed })
+                    }
+                }
+                .horizontalScroll(scroll),
+        ) {
             Ruler(p, pxPerSec, widthDp, studio)
             p.tracks.forEach { t -> Lane(studio, p, t, pxPerSec, widthDp, selected, onSelect) }
         }
@@ -265,6 +288,17 @@ private fun Ruler(p: StudioProject, pxPerSec: Float, widthDp: androidx.compose.u
         val bar = 60.0 / max(20.0, p.bpm) * p.beatsPerBar
         // Mostra um número a cada N compassos, conforme o zoom.
         val every = generateSequence(1) { it * 2 }.first { it * bar * pps >= 36.dp.toPx() }
+        val beat = 60.0 / max(20.0, p.bpm)
+        if (beat * pps >= 10.dp.toPx()) {
+            var b = 0
+            while (b * beat * pps < size.width) {
+                if (b % p.beatsPerBar != 0) {
+                    val x = (b * beat * pps).toFloat()
+                    drawLine(Palette.line.copy(alpha = 0.7f), Offset(x, size.height * 0.75f), Offset(x, size.height), 1f)
+                }
+                b++
+            }
+        }
         var k = 0
         while (k * bar * pps < size.width) {
             val x = (k * bar * pps).toFloat()
@@ -317,7 +351,7 @@ private fun Lane(
             }
             .pointerInput(pxPerSec, t.id, stopped) {
                 if (!stopped) return@pointerInput
-                detectDragGestures(
+                detectDragGesturesAfterLongPress(
                     onDragStart = { o ->
                         val sec = o.x / pxPerSec.dp.toPx()
                         dragClip = clips.firstOrNull { sec >= it.offset && sec <= it.end }?.id
