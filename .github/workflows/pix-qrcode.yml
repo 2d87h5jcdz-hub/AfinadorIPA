@@ -1,0 +1,36 @@
+name: Gerar QR Code do Pix
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [estudio]
+    paths: [docs/pix-copia-e-cola.txt]
+
+permissions:
+  contents: write
+
+jobs:
+  qrcode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gerar e conferir o QR
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq zbar-tools >/dev/null
+          pip install -q "qrcode[pil]"
+          python3 - <<'PY'
+          import qrcode
+          payload = open("docs/pix-copia-e-cola.txt").read().strip()
+          q = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=3)
+          q.add_data(payload); q.make(fit=True)
+          q.make_image(fill_color="black", back_color="white").save("docs/pix-qrcode.png")
+          PY
+          decoded="$(zbarimg -q --raw docs/pix-qrcode.png)"
+          test "$decoded" = "$(tr -d '\n' < docs/pix-copia-e-cola.txt)" && echo "QR confere com o Pix copia e cola"
+      - name: Salvar no repositório
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/pix-qrcode.png
+          git diff --cached --quiet || git commit -m "QR Code do Pix [skip ci]"
+          git push

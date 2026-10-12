@@ -10,9 +10,18 @@ App gratuito para iPhone, **sem anúncios**, para quem toca: afinador, acordes, 
 
 Se o app te ajudou e você tiver condições, pode apoiar com uma doação de qualquer valor via Pix:
 
-**Chave Pix (aleatória):** `PIX_AQUI`
+**Chave Pix (aleatória):** `63053aa4-cbad-4c78-b92c-8ba3082d83ca`
 
-<!-- QR CODE: docs/pix-qrcode.png -->
+<img src="docs/pix-qrcode.png" alt="QR Code do Pix" width="220">
+
+<details>
+<summary>Pix copia e cola</summary>
+
+```
+00020126580014br.gov.bcb.pix013663053aa4-cbad-4c78-b92c-8ba3082d83ca5204000053039865802BR5915PESTANA ESTUDIO6014RIO DE JANEIRO62070503***63044F71
+```
+
+</details>
 
 A doação é voluntária e não dá direito a recursos extras nem a suporte. É só um incentivo para eu continuar desenvolvendo o app e novos projetos. Mesmo com ajuda de IA, existem custos, como as assinaturas das ferramentas. Obrigado!
 
