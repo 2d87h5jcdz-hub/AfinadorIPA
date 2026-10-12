@@ -48,7 +48,7 @@ struct TunerView: View {
 
     private var dial: some View {
         VStack(spacing: 4) {
-            GaugeView(cents: tuner.frequency == nil ? 0 : tuner.cents, inTune: inTune)
+            GaugeView(cents: tuner.frequency == nil ? 0 : tuner.centsPrecise, inTune: inTune)
                 .frame(height: 170)
 
             HStack(alignment: .top, spacing: 2) {
@@ -191,25 +191,44 @@ struct TunerView: View {
     }
 }
 
+/// Ponteiro com "mola": persegue a leitura com amortecimento crítico, quadro a quadro,
+/// como o ponteiro físico de um afinador (sem trancos e sem passar do ponto).
+final class NeedleSpring: ObservableObject {
+    private(set) var value: Double = 0
+    private var velocity: Double = 0
+    private var lastTime: Date?
+    /// Rigidez da mola (rad/s): maior = mais rápido.
+    private let omega: Double = 14
+
+    func step(toward target: Double, at time: Date) -> Double {
+        let dt = min(1.0 / 30.0, max(0, time.timeIntervalSince(lastTime ?? time)))
+        lastTime = time
+        // x'' = ω²(alvo − x) − 2ωx'  (amortecimento crítico)
+        let accel = omega * omega * (target - value) - 2 * omega * velocity
+        velocity += accel * dt
+        value += velocity * dt
+        return value
+    }
+}
+
 struct GaugeView: View {
-    let cents: Int
+    let cents: Double
     let inTune: Bool
+    @StateObject private var spring = NeedleSpring()
 
     private var needleColor: Color { inTune ? Color.ok : Color.brass }
 
-    private var angle: Double {
-        let c = Double(max(-50, min(50, cents)))
-        return c / 50.0 * 60.0
-    }
-
     var body: some View {
-        Canvas { ctx, size in
-            let center = CGPoint(x: size.width / 2, y: size.height - 10)
-            let radius: CGFloat = min(size.width / 2 - 24, size.height - 30)
-            GaugeView.drawScale(ctx, center: center, radius: radius)
-            GaugeView.drawNeedle(ctx, center: center, radius: radius, degrees: angle, color: needleColor)
+        TimelineView(.animation) { context in
+            let smoothed = spring.step(toward: max(-50, min(50, cents)), at: context.date)
+            let angle = smoothed / 50.0 * 60.0
+            Canvas { ctx, size in
+                let center = CGPoint(x: size.width / 2, y: size.height - 10)
+                let radius: CGFloat = min(size.width / 2 - 24, size.height - 30)
+                GaugeView.drawScale(ctx, center: center, radius: radius)
+                GaugeView.drawNeedle(ctx, center: center, radius: radius, degrees: angle, color: needleColor)
+            }
         }
-        .animation(.easeOut(duration: 0.12), value: cents)
     }
 
     static func point(_ center: CGPoint, _ radius: CGFloat, _ radians: Double) -> CGPoint {

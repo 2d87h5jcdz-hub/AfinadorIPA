@@ -174,33 +174,106 @@ final class StudioEffectChain {
     static func clamp(_ v: Float, _ lo: Float, _ hi: Float) -> Float { min(hi, max(lo, v)) }
 }
 
-// MARK: - Uma faixa: player → conversor → efeitos → mixer da faixa (volume/pan) → master
+// MARK: - Uma faixa: players (clips) → conversor → efeitos → mixer da faixa (volume/pan) → master
+//
+// v2: uma faixa tem vários clips. Os clips são distribuídos em "pistas" (lanes): cada pista é um
+// AVAudioPlayerNode que toca clips que NÃO se sobrepõem e cujos arquivos têm o MESMO formato de
+// processamento (o player é conectado com esse formato). Normalmente uma faixa = uma pista; clips
+// sobrepostos (moveClip) ou de formatos diferentes (punch-in gravado numa faixa importada) ganham
+// pistas extras. Todas as pistas entram no mixer `converter` (cada uma num barramento de entrada),
+// que converte para o formato estéreo da cadeia.
+
+final class StudioClipLane {
+    struct Item {
+        let clip: StudioClip
+        let file: AVAudioFile
+    }
+
+    let player = AVAudioPlayerNode()
+    let format: AVAudioFormat
+    private(set) var items: [Item] = []
+    /// Arquivos abertos por esta pista (um AVAudioFile por nome; não compartilhados entre players).
+    private var files: [String: AVAudioFile] = [:]
+    /// true se algo foi agendado na última chamada de schedule.
+    var hasScheduled = false
+
+    init(format: AVAudioFormat) {
+        self.format = format
+    }
+
+    var end: TimeInterval { items.last.map { $0.clip.end } ?? -Double.infinity }
+
+    /// Arquivo desta pista para `fileName` (abre uma vez; nil se não existir/ilegível).
+    func file(named fileName: String, folder: URL) -> AVAudioFile? {
+        if let f = files[fileName] { return f }
+        guard let f = try? AVAudioFile(forReading: folder.appendingPathComponent(fileName)),
+              f.length > 0 else { return nil }
+        files[fileName] = f
+        return f
+    }
+
+    func adopt(_ file: AVAudioFile, named fileName: String) {
+        if files[fileName] == nil { files[fileName] = file }
+    }
+
+    func append(_ clip: StudioClip, file: AVAudioFile) {
+        items.append(Item(clip: clip, file: file))
+    }
+}
 
 final class StudioTrackChain {
     let trackID: UUID
-    let file: AVAudioFile
-    let player = AVAudioPlayerNode()
-    /// Converte o formato do arquivo (mono/estéreo, qualquer taxa) para o formato estéreo da cadeia.
+    private(set) var lanes: [StudioClipLane] = []
+    /// Mixer que recebe todas as pistas e converte para o formato estéreo da cadeia.
     let converter = AVAudioMixerNode()
     let effects = StudioEffectChain()
     /// Volume e pan da faixa (pan é aplicado na entrada do mixer de destino).
     let output = AVAudioMixerNode()
+    /// Clips cujo arquivo não pôde ser aberto.
+    private(set) var missingClips = 0
 
-    init(trackID: UUID, file: AVAudioFile) {
+    /// Abre os arquivos dos clips (em `folder`) e distribui os clips em pistas.
+    init(trackID: UUID, clips: [StudioClip], folder: URL) {
         self.trackID = trackID
-        self.file = file
+        let sorted = clips.filter { $0.duration > 0 }.sorted { $0.offset < $1.offset }
+        for clip in sorted {
+            // Pista compatível já existente: mesmo formato e sem sobreposição.
+            var placed = false
+            for lane in lanes where lane.end <= clip.offset + 0.000_5 {
+                guard let file = lane.file(named: clip.fileName, folder: folder) else { break }
+                if file.processingFormat == lane.format {
+                    lane.append(clip, file: file)
+                    placed = true
+                    break
+                }
+            }
+            if placed { continue }
+            guard let file = try? AVAudioFile(forReading: folder.appendingPathComponent(clip.fileName)),
+                  file.length > 0, file.processingFormat.sampleRate > 0 else {
+                missingClips += 1
+                continue
+            }
+            let lane = StudioClipLane(format: file.processingFormat)
+            lane.adopt(file, named: clip.fileName)
+            lane.append(clip, file: file)
+            lanes.append(lane)
+        }
     }
 
-    var fileDuration: TimeInterval {
-        let sr = file.processingFormat.sampleRate
-        return sr > 0 ? Double(file.length) / sr : 0
-    }
+    /// true se há algo para tocar.
+    var isPlayable: Bool { !lanes.isEmpty }
+
+    /// Fim do último clip tocável (s).
+    var end: TimeInterval { lanes.map { $0.end }.max() ?? 0 }
 
     func install(in engine: AVAudioEngine, destination: AVAudioNode, format: AVAudioFormat) {
-        engine.attach(player)
         engine.attach(converter)
         engine.attach(output)
-        engine.connect(player, to: converter, format: file.processingFormat)
+        for lane in lanes {
+            engine.attach(lane.player)
+            engine.connect(lane.player, to: converter, fromBus: 0,
+                           toBus: converter.nextAvailableInputBus, format: lane.format)
+        }
         effects.install(in: engine, from: converter, to: output, format: format)
         engine.connect(output, to: destination, format: format)
     }
@@ -215,32 +288,61 @@ final class StudioTrackChain {
         effects.apply(track.effects, extraGainDB: boost)
     }
 
-    /// Agenda o trecho do arquivo que corresponde à posição `songPosition` da música.
-    /// `offset` > 0 atrasa a faixa; < 0 começa mais adiante no arquivo.
-    /// `leadIn` = segundos entre o início do player e a posição `songPosition` (contagem).
-    /// Retorna false se a faixa já terminou nessa posição (nada agendado).
-    func schedule(songPosition: TimeInterval, offset: TimeInterval, leadIn: TimeInterval) -> Bool {
-        player.stop()
-        let sr = file.processingFormat.sampleRate
-        guard sr > 0 else { return false }
-        var fileTime = songPosition - offset
-        var delay = max(0, leadIn)
-        if fileTime < 0 {
-            delay += -fileTime
-            fileTime = 0
+    /// Agenda todos os clips a partir da posição `songPosition` da música.
+    /// `leadIn` = segundos entre o início dos players e a posição `songPosition` (contagem).
+    /// Clips que começam depois da posição esperam (silêncio); um clip que já começou toca do meio.
+    /// Retorna false se nada foi agendado (faixa já terminou nessa posição).
+    func schedule(songPosition: TimeInterval, leadIn: TimeInterval) -> Bool {
+        stop()
+        var any = false
+        for lane in lanes {
+            lane.hasScheduled = false
+            let sr = lane.format.sampleRate
+            guard sr > 0 else { continue }
+            for item in lane.items {
+                let clip = item.clip
+                guard clip.duration > 0, clip.end > songPosition else { continue }
+                var delay = max(0, leadIn)
+                var fileTime = max(0, clip.fileStart)
+                var length = clip.duration
+                if clip.offset >= songPosition {
+                    delay += clip.offset - songPosition
+                } else {
+                    let into = songPosition - clip.offset
+                    fileTime += into
+                    length -= into
+                }
+                guard length > 0 else { continue }
+                let total = item.file.length
+                let startFrame = AVAudioFramePosition((fileTime * sr).rounded())
+                guard startFrame >= 0, startFrame < total else { continue }
+                let wanted = AVAudioFramePosition((length * sr).rounded())
+                let count = min(wanted, total - startFrame)
+                guard count > 0, count <= AVAudioFramePosition(UInt32.max) else { continue }
+                // Tempo no relógio do próprio player (amostra 0 = instante do play).
+                let when = AVAudioTime(sampleTime: AVAudioFramePosition((delay * sr).rounded()), atRate: sr)
+                lane.player.scheduleSegment(item.file, startingFrame: startFrame,
+                                            frameCount: AVAudioFrameCount(count), at: when,
+                                            completionHandler: nil)
+                lane.hasScheduled = true
+            }
+            if lane.hasScheduled { any = true }
         }
-        let startFrame = AVAudioFramePosition(fileTime * sr)
-        let total = file.length
-        guard startFrame < total else { return false }
-        let count = AVAudioFrameCount(total - startFrame)
-        guard count > 0 else { return false }
-        // Tempo no relógio do próprio player (amostra 0 = instante do play).
-        let when: AVAudioTime? = delay > 0
-            ? AVAudioTime(sampleTime: AVAudioFramePosition(delay * sr), atRate: sr)
-            : nil
-        player.scheduleSegment(file, startingFrame: startFrame, frameCount: count, at: when,
-                               completionHandler: nil)
-        return true
+        return any
+    }
+
+    /// Inicia as pistas que têm algo agendado (nil = imediatamente / início do render offline).
+    func play(at when: AVAudioTime?) {
+        for lane in lanes where lane.hasScheduled {
+            lane.player.play(at: when)
+        }
+    }
+
+    func stop() {
+        for lane in lanes {
+            lane.player.stop()
+            lane.hasScheduled = false
+        }
     }
 }
 

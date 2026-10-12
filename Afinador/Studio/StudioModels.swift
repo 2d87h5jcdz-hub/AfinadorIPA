@@ -11,23 +11,70 @@ import Foundation
 // Persistência: Documents/Projects/<project.id>/project.json + um arquivo de áudio por faixa
 // (Track.fileName, relativo à pasta do projeto). Documents fica visível no app Arquivos.
 
+/// Um trecho de áudio posicionado na linha do tempo de uma faixa (v2).
+/// Uma faixa pode ter vários clips (gravações em partes, regravação de trecho, "continuar de onde parou").
+struct StudioClip: Identifiable, Codable, Equatable {
+    var id: UUID = UUID()
+    /// Arquivo de áudio dentro da pasta do projeto (ex.: "take-<uuid>.caf").
+    var fileName: String
+    /// Onde o clip começa na linha do tempo (s). Já inclui a compensação de latência da gravação.
+    var offset: TimeInterval
+    /// Ponto de início dentro do arquivo (s) — permite aparar o começo (regravação de trecho).
+    var fileStart: TimeInterval = 0
+    /// Duração tocada a partir de fileStart (s).
+    var duration: TimeInterval
+    var end: TimeInterval { offset + duration }
+}
+
 /// Uma faixa (camada) de um projeto.
 struct StudioTrack: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var name: String
-    /// Nome do arquivo de áudio dentro da pasta do projeto (ex.: "track-<uuid>.caf").
-    var fileName: String
+    /// LEGADO (v1, uma gravação por faixa). Projetos antigos são migrados para `clips` ao carregar;
+    /// código novo usa só `clips`. Mantido para não quebrar inicializadores existentes.
+    var fileName: String = ""
     var volume: Float = 1.0          // 0…1.5
     var pan: Float = 0               // -1 (esq) … 1 (dir)
     var isMuted: Bool = false
     var isSolo: Bool = false
-    /// Deslocamento aplicado na reprodução (s). Positivo = atrasa. Usado na compensação de latência.
+    /// LEGADO (v1): deslocamento do único arquivo. Em v2 cada clip tem seu offset.
     var offset: TimeInterval = 0
     var effects: EffectSettings = .preset(.none)
     /// true quando veio de fora (música importada / stem separado), false quando foi gravada no app.
     var isImported: Bool = false
-    /// Duração em segundos (preenchida pelo motor ao gravar/importar).
+    /// LEGADO (v1): duração do único arquivo. Em v2 use `end`.
     var duration: TimeInterval = 0
+    /// v2: trechos de áudio na linha do tempo, ordenados por offset. Faixa vazia = [].
+    var clips: [StudioClip] = []
+
+    /// Fim do último clip (s); 0 para faixa vazia.
+    var end: TimeInterval { clips.map(\.end).max() ?? 0 }
+}
+
+extension StudioTrack {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, fileName, volume, pan, isMuted, isSolo, offset, effects, isImported, duration, clips
+    }
+
+    /// Decodifica v1 e v2: uma faixa antiga (fileName sem clips) vira um clip único.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Faixa"
+        fileName = try c.decodeIfPresent(String.self, forKey: .fileName) ?? ""
+        volume = try c.decodeIfPresent(Float.self, forKey: .volume) ?? 1
+        pan = try c.decodeIfPresent(Float.self, forKey: .pan) ?? 0
+        isMuted = try c.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
+        isSolo = try c.decodeIfPresent(Bool.self, forKey: .isSolo) ?? false
+        offset = try c.decodeIfPresent(TimeInterval.self, forKey: .offset) ?? 0
+        effects = try c.decodeIfPresent(EffectSettings.self, forKey: .effects) ?? .preset(.none)
+        isImported = try c.decodeIfPresent(Bool.self, forKey: .isImported) ?? false
+        duration = try c.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0
+        clips = try c.decodeIfPresent([StudioClip].self, forKey: .clips) ?? []
+        if clips.isEmpty && !fileName.isEmpty && duration > 0 {
+            clips = [StudioClip(fileName: fileName, offset: offset, fileStart: 0, duration: duration)]
+        }
+    }
 }
 
 /// Um projeto (música) com várias faixas.
@@ -168,5 +215,35 @@ enum ExportFormat: String, CaseIterable, Identifiable {
      // Ciclo de vida
      func activate()     // ao entrar na aba: prepara sessão de áudio/engine
      func deactivate()   // ao sair: para tudo e libera o microfone
+
+     // ── v2: LINHA DO TEMPO / CLIPS (já existentes: availableInputs, selectedInputID, selectInput(_:),
+     //        inputGainDB, isExporting, latencyCompensation, fileURL(for:), clearError()) ──
+
+     /// Faixa que recebe a próxima gravação ("armada"). nil = record() cria uma faixa nova (comportamento v1).
+     @Published var armedTrackID: UUID?
+     /// Começo da gravação em andamento na linha do tempo (s), para a UI desenhar o clip "ao vivo"
+     /// na faixa armada (nil fora da gravação). O fim é `position`.
+     @Published private(set) var recordingStart: TimeInterval?
+
+     /// Cria uma faixa vazia ("Faixa N" se name == nil), salva, e já a deixa armada.
+     @discardableResult func addEmptyTrack(name: String?) -> StudioTrack
+     /// Arma (ou desarma com nil) a faixa da próxima gravação. Só com o transporte parado.
+     func arm(_ trackID: UUID?)
+     /// record() v2: grava a partir da posição atual na faixa armada (ou numa faixa nova se nada
+     /// estiver armado). O trecho novo SUBSTITUI o que houver por baixo naquela faixa (punch-in):
+     /// clips sobrepostos são aparados/divididos (ajustando fileStart/duration/offset), nunca o arquivo.
+     /// Ao parar, o clip novo entra em track.clips (ordenado por offset) e a faixa continua armada.
+
+     /// Leva a cabeça de reprodução ao fim da faixa ("continuar de onde parou").
+     func seekToEnd(of trackID: UUID)
+     /// Move um clip na linha do tempo (offset >= 0). Só parado.
+     func moveClip(_ clipID: UUID, in trackID: UUID, to offset: TimeInterval)
+     /// Remove um clip da faixa (apaga o arquivo se nenhum outro clip o usa). Só parado.
+     func deleteClip(_ clipID: UUID, in trackID: UUID)
+     /// Forma de onda do trecho tocado do clip: `buckets` picos 0…1 (cache em disco por arquivo).
+     func waveform(for clip: StudioClip, buckets: Int) async -> [Float]
+
+     // Compatibilidade: importAudio cria faixa com 1 clip; StudioProject.duration/`duration` = maior track.end;
+     // reprodução, exportação e níveis consideram todos os clips de cada faixa.
  }
 */

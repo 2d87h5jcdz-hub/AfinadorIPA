@@ -42,7 +42,7 @@ enum StudioFileOps {
 }
 
 /// Mixagem offline: um AVAudioEngine separado em manual rendering mode com o MESMO grafo do
-/// motor ao vivo (StudioTrackChain + limitador master), respeitando volume/pan/mudo/solo/efeitos/offset.
+/// motor ao vivo (StudioTrackChain + limitador master), respeitando volume/pan/mudo/solo/efeitos e todos os clips (v2) de cada faixa.
 enum StudioOfflineRenderer {
     static let sampleRate: Double = 44_100
     static let maxFrames: AVAudioFrameCount = 4096
@@ -74,13 +74,12 @@ enum StudioOfflineRenderer {
         var end: TimeInterval = 0
         var hasTail = false
         for track in audible {
-            let url = folder.appendingPathComponent(track.fileName)
-            guard let file = try? AVAudioFile(forReading: url), file.length > 0 else { continue }
-            let chain = StudioTrackChain(trackID: track.id, file: file)
+            let chain = StudioTrackChain(trackID: track.id, clips: track.clips, folder: folder)
+            guard chain.isPlayable else { continue }
             chain.install(in: engine, destination: master, format: renderFormat)
             chain.apply(track, anySolo: anySolo)
             chains.append((chain: chain, track: track))
-            end = max(end, track.offset + chain.fileDuration)
+            end = max(end, chain.end)
             if track.effects.reverbMix > 0.001 || track.effects.delayMix > 0.001 { hasTail = true }
         }
         guard !chains.isEmpty, end > 0 else { throw StudioEngineError.nothingToExport }
@@ -95,13 +94,13 @@ enum StudioOfflineRenderer {
             throw StudioEngineError.exportFailed("não foi possível iniciar o renderizador")
         }
         defer {
-            for item in chains { item.chain.player.stop() }
+            for item in chains { item.chain.stop() }
             engine.stop()
         }
 
         for item in chains {
-            if item.chain.schedule(songPosition: 0, offset: item.track.offset, leadIn: 0) {
-                item.chain.player.play()
+            if item.chain.schedule(songPosition: 0, leadIn: 0) {
+                item.chain.play(at: nil)
             }
         }
 

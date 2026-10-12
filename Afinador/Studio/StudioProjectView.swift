@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// Qual cadeia de efeitos a folha está editando.
 enum StudioEffectsTarget: Identifiable, Equatable {
@@ -31,11 +30,7 @@ struct StudioProjectView: View {
                     }
                     StudioProjectHeader(studio: studio, onError: { localError = $0 })
                     StudioInputPanel(studio: studio, onEditEffects: { effectsTarget = .monitor })
-                    StudioTrackList(
-                        studio: studio,
-                        onEffects: { id in effectsTarget = .track(id) },
-                        onError: { localError = $0 }
-                    )
+                    StudioTimelineView(studio: studio, onError: { localError = $0 })
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
@@ -92,6 +87,8 @@ struct StudioProjectHeader: View {
     let onError: (String) -> Void
     @State private var showRename = false
     @State private var renameText = ""
+    /// Painel de andamento/compasso/clique recolhível (libera espaço para a linha do tempo).
+    @AppStorage("studio.settingsExpanded") private var settingsExpanded: Bool = false
 
     private var isStopped: Bool { studio.transport == .stopped }
     private var projectName: String { studio.project?.name ?? "" }
@@ -100,7 +97,11 @@ struct StudioProjectHeader: View {
         VStack(alignment: .leading, spacing: 12) {
             topRow
             nameRow
-            settingsPanel
+            if settingsExpanded {
+                settingsPanel
+            } else {
+                settingsSummary
+            }
         }
         .alert("Renomear música", isPresented: $showRename) {
             TextField("Nome", text: $renameText)
@@ -148,7 +149,81 @@ struct StudioProjectHeader: View {
         }
     }
 
+    private var signatureText: String {
+        let beats: Int = studio.project?.beatsPerBar ?? 4
+        return beats == 6 ? "6/8" : "\(beats)/4"
+    }
+
+    private var summaryText: String {
+        let bpm: Int = Int(studio.project?.bpm ?? 90)
+        let click: String = studio.clickEnabled ? "clique" : "sem clique"
+        let count: String
+        switch studio.countInBars {
+        case 0: count = "sem contagem"
+        case 1: count = "contagem 1"
+        default: count = "contagem \(studio.countInBars)"
+        }
+        return "\(bpm) BPM · \(signatureText) · \(click) · \(count)"
+    }
+
+    /// Linha compacta (painel recolhido): toque para abrir os ajustes.
+    private var settingsSummary: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) { settingsExpanded = true }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "metronome")
+                    .foregroundColor(.brass)
+                Text(summaryText)
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.muted)
+            }
+            .foregroundColor(.fg)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.panel))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.line))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Andamento e compasso: \(summaryText). Toque para ajustar")
+    }
+
+    private var collapseRow: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) { settingsExpanded = false }
+        } label: {
+            HStack {
+                Text("ANDAMENTO E COMPASSO")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(.muted)
+                Spacer()
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.muted)
+            }
+            .frame(minHeight: 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Recolher ajustes de andamento e compasso")
+    }
+
     private var settingsPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            collapseRow
+            settingsControls
+                .disabled(!isStopped)
+                .opacity(isStopped ? 1 : 0.55)
+        }
+        .studioPanel()
+    }
+
+    private var settingsControls: some View {
         VStack(alignment: .leading, spacing: 12) {
             bpmRow
             signatureRow
@@ -156,9 +231,6 @@ struct StudioProjectHeader: View {
             clickRow
             countInRow
         }
-        .studioPanel()
-        .disabled(!isStopped)
-        .opacity(isStopped ? 1 : 0.55)
     }
 
     private var bpmBinding: Binding<Double> {
@@ -250,7 +322,82 @@ struct StudioInputPanel: View {
         )
     }
 
+    /// Painel recolhível: recolhido mostra só entrada + medidor (telas pequenas).
+    @AppStorage("studio.inputExpanded") private var expanded: Bool = false
+
     var body: some View {
+        if expanded {
+            expandedBody
+        } else {
+            compactBody
+        }
+    }
+
+    private var compactBody: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) { expanded = true }
+            } label: {
+                compactRow
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Entrada: \(studio.inputName), efeito \(studio.monitorEffects.preset.title). Toque para ajustar")
+            if studio.monitorEnabled && !studio.isHeadphoneConnected {
+                headphoneWarning
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.panel))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.line))
+    }
+
+    private var compactRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "mic.fill")
+                .foregroundColor(.brass)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(studio.inputName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Text(compactDetail)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.muted)
+                    .lineLimit(1)
+            }
+            .layoutPriority(1)
+            Spacer(minLength: 4)
+            StudioMeterBar(level: studio.inputLevel, height: 8)
+                .frame(width: 70)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.muted)
+        }
+        .foregroundColor(.fg)
+        .frame(minHeight: 36)
+        .contentShape(Rectangle())
+    }
+
+    private var compactDetail: String {
+        let monitor: String = studio.monitorEnabled ? "ouvindo" : "sem retorno"
+        return "\(studio.monitorEffects.preset.title) · \(monitor)"
+    }
+
+    private var collapseButton: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) { expanded = false }
+        } label: {
+            Image(systemName: "chevron.up")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.muted)
+                .frame(width: 32, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Recolher painel de entrada")
+    }
+
+    private var expandedBody: some View {
         VStack(alignment: .leading, spacing: 12) {
             inputRow
             StudioMeterBar(level: studio.inputLevel, height: 10)
@@ -277,6 +424,7 @@ struct StudioInputPanel: View {
             Text("ENTRADA")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(.muted)
+            collapseButton
         }
     }
 
@@ -370,158 +518,6 @@ struct StudioInputPanel: View {
             Spacer(minLength: 4)
             StudioChip(title: "Ajustar", systemImage: "slider.horizontal.3", action: onEditEffects)
                 .accessibilityLabel("Ajustar efeitos ao vivo")
-        }
-    }
-}
-
-// MARK: - Lista de faixas + importação
-
-@MainActor
-struct StudioTrackList: View {
-    @ObservedObject var studio: StudioEngine
-    let onEffects: (UUID) -> Void
-    let onError: (String) -> Void
-    @State private var pendingDelete: StudioTrack?
-    @State private var showImporter = false
-    @State private var importing = false
-
-    private var tracks: [StudioTrack] { studio.project?.tracks ?? [] }
-    private var isRecording: Bool {
-        switch studio.transport {
-        case .recording, .countIn: return true
-        default: return false
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            header
-            if tracks.isEmpty && !isRecording {
-                emptyHint
-            }
-            ForEach(Array(tracks.enumerated()), id: \.element.id) { pair in
-                row(index: pair.offset, track: pair.element)
-            }
-            if isRecording {
-                recordingRow
-            }
-        }
-        .fileImporter(isPresented: $showImporter,
-                      allowedContentTypes: [UTType.audio],
-                      allowsMultipleSelection: true) { result in
-            handleImport(result)
-        }
-        .alert("Apagar faixa?", isPresented: deleteBinding, presenting: pendingDelete) { track in
-            Button("Apagar", role: .destructive) { studio.deleteTrack(track.id) }
-            Button("Cancelar", role: .cancel) {}
-        } message: { track in
-            Text("“\(track.name)” será apagada do projeto. Não dá para desfazer.")
-        }
-    }
-
-    private var deleteBinding: Binding<Bool> {
-        Binding<Bool>(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
-    }
-
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("Faixas")
-                .font(.system(size: 20, weight: .heavy, design: .serif))
-            Text("\(tracks.count)")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.muted)
-            Spacer()
-            importButton
-        }
-    }
-
-    private var importButton: some View {
-        Button {
-            showImporter = true
-        } label: {
-            HStack(spacing: 6) {
-                if importing {
-                    ProgressView().tint(Color.brass)
-                } else {
-                    Image(systemName: "square.and.arrow.down")
-                }
-                Text(importing ? "Importando…" : "Importar áudio")
-            }
-            .font(.system(size: 13, weight: .semibold))
-            .padding(.horizontal, 12)
-            .frame(minHeight: 34)
-            .background(Capsule().fill(Color.panel))
-            .overlay(Capsule().stroke(Color.line))
-            .foregroundColor(.fg)
-        }
-        .disabled(importing || studio.transport != .stopped)
-        .accessibilityLabel("Importar áudio do app Arquivos como nova faixa")
-    }
-
-    private var emptyHint: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Nenhuma faixa ainda")
-                .font(.system(size: 16, weight: .semibold, design: .serif))
-            Text("Toque no botão vermelho para gravar a primeira camada, ou importe um áudio (uma base, uma guia) do app Arquivos.")
-                .font(.system(size: 13))
-                .foregroundColor(.muted)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .studioPanel()
-    }
-
-    private func row(index: Int, track: StudioTrack) -> some View {
-        StudioTrackRow(
-            track: track,
-            index: index + 1,
-            level: studio.trackLevels[track.id] ?? 0,
-            isLocked: isRecording,
-            onUpdate: { updated in studio.updateTrack(updated) },
-            onEffects: { onEffects(track.id) },
-            onDelete: { pendingDelete = track }
-        )
-    }
-
-    private var recordingRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Circle().fill(Color.off).frame(width: 10, height: 10)
-                Text("Nova faixa \(tracks.count + 1)")
-                    .font(.system(size: 17, weight: .semibold, design: .serif))
-                Spacer()
-                Text(studio.transport == .recording ? "GRAVANDO" : "CONTAGEM")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.off)
-            }
-            StudioMeterBar(level: studio.inputLevel, height: 8)
-            Text("Efeito: \(studio.monitorEffects.preset.title)")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.muted)
-        }
-        .studioPanel(stroke: .off)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Gravando nova faixa \(tracks.count + 1)")
-    }
-
-    private func handleImport(_ result: Result<[URL], Error>) {
-        switch result {
-        case .failure(let error):
-            onError("Não deu para abrir o arquivo: \(error.localizedDescription)")
-        case .success(let urls):
-            guard !urls.isEmpty else { return }
-            importing = true
-            Task {
-                for url in urls {
-                    let name = url.deletingPathExtension().lastPathComponent
-                    do {
-                        _ = try await studio.importAudio(from: url, name: name)
-                    } catch {
-                        onError("Não deu para importar “\(url.lastPathComponent)”: \(error.localizedDescription)")
-                    }
-                }
-                importing = false
-            }
         }
     }
 }

@@ -50,10 +50,10 @@ struct StudioTrackRow: View {
                 importedBadge
             }
             Spacer(minLength: 4)
-            Text(StudioUIFormat.time(track.duration))
+            Text(StudioUIFormat.time(track.end))
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(.muted)
-                .accessibilityLabel("Duração \(StudioUIFormat.spokenTime(track.duration))")
+                .accessibilityLabel("Duração \(StudioUIFormat.spokenTime(track.end))")
             menu
         }
     }

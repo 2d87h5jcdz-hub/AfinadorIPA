@@ -26,7 +26,13 @@ import UIKit
 // Compensação de latência: o gravador descarta as amostras capturadas antes do instante em que a
 // música chega à posição inicial (pelo hostTime do tap, o que já cobre o atraso do buffer de I/O);
 // o atraso restante — ida até o alto-falante/fone (outputLatency) e volta pelo conversor de entrada
-// (inputLatency) — vira offset negativo da faixa nova: offset = posiçãoInicial − (inputLatency + outputLatency).
+// (inputLatency) — vira offset negativo do clip novo: offset = posiçãoInicial − (inputLatency + outputLatency).
+// Se isso der < 0 (gravação a partir do 0), o começo é aparado: offset = 0 e fileStart = −offset.
+//
+// v2 (linha do tempo com clips): cada faixa tem `clips`. Reprodução/exportação agendam todos os clips
+// (StudioTrackChain/StudioClipLane); a gravação entra na faixa ARMADA a partir da cabeça de reprodução
+// e substitui o que houver por baixo (punch-in, StudioTimeline.punchIn). Os campos legados da faixa
+// (fileName/offset/duration) são mantidos como espelho dos clips (studioSyncLegacyFields).
 
 @MainActor
 final class StudioEngine: ObservableObject {
@@ -78,15 +84,30 @@ final class StudioEngine: ObservableObject {
     }
     @Published private(set) var lastError: String?
 
-    /// Maior faixa do projeto (fim da faixa = offset + duração).
+    /// Maior faixa do projeto (fim do último clip).
     var duration: TimeInterval {
         guard let project else { return 0 }
         var longest: TimeInterval = 0
         for track in project.tracks {
-            longest = max(longest, track.offset + track.duration)
+            longest = max(longest, track.end)
         }
         return max(0, longest)
     }
+
+    // MARK: v2: linha do tempo / clips (contrato)
+
+    /// Faixa que recebe a próxima gravação. nil = record() cria uma faixa nova e a arma.
+    /// Só em memória: zera ao trocar/fechar o projeto e quando a faixa armada é apagada.
+    @Published var armedTrackID: UUID? = nil {
+        didSet {
+            guard armedTrackID != oldValue, let id = armedTrackID else { return }
+            if project?.tracks.contains(where: { $0.id == id }) != true { armedTrackID = nil }
+        }
+    }
+    /// Começo da gravação em andamento na linha do tempo (s) = cabeça de reprodução quando record()
+    /// começou (sem a compensação de latência). Não-nil desde record() (inclui a contagem) até o fim
+    /// da tomada; o fim do clip "ao vivo" é `position`.
+    @Published private(set) var recordingStart: TimeInterval? = nil
 
     // MARK: Extras (além do contrato)
 
@@ -99,10 +120,18 @@ final class StudioEngine: ObservableObject {
         return s.inputLatency + s.outputLatency
     }
 
-    /// URL do arquivo de áudio de uma faixa do projeto aberto (útil para forma de onda).
+    /// URL do arquivo de áudio de uma faixa do projeto aberto (v2: o do primeiro clip).
     func fileURL(for track: StudioTrack) -> URL? {
         guard let project else { return nil }
-        return StudioStorage.folder(for: project.id).appendingPathComponent(track.fileName)
+        let name = track.clips.first?.fileName ?? track.fileName
+        guard !name.isEmpty else { return nil }
+        return StudioStorage.folder(for: project.id).appendingPathComponent(name)
+    }
+
+    /// URL do arquivo de áudio de um clip do projeto aberto.
+    func fileURL(for clip: StudioClip) -> URL? {
+        guard let project, !clip.fileName.isEmpty else { return nil }
+        return StudioStorage.folder(for: project.id).appendingPathComponent(clip.fileName)
     }
 
     func clearError() { lastError = nil }
@@ -120,12 +149,15 @@ final class StudioEngine: ObservableObject {
         "Sem fone de ouvido: ouvir a entrada pelo alto-falante pode causar microfonia. Use fone para monitorar."
 
     private struct PendingTake {
-        let id: UUID
         let fileName: String
         let url: URL
         let startPosition: TimeInterval
         let latency: TimeInterval
         let sampleRate: Double
+        /// Faixa que recebe a tomada.
+        let trackID: UUID
+        /// true se record() criou a faixa (sem nada armado): sai se a tomada não for salva.
+        let createdTrack: Bool
     }
 
     private var engine: AVAudioEngine?
@@ -251,7 +283,7 @@ final class StudioEngine: ObservableObject {
         var from = max(0, start ?? position)
         if total > 0 && from >= total - 0.05 { from = 0 }   // no fim: recomeça do início
 
-        guard startTransport(from: from, leadIn: 0, recordFile: nil) else {
+        guard startTransport(from: from, leadIn: 0, recordFile: nil, silencing: nil) else {
             transport = .stopped
             return
         }
@@ -276,6 +308,7 @@ final class StudioEngine: ObservableObject {
             transport = .stopped
             trackLevels = [:]
             position = take?.startPosition ?? playStartPosition
+            recordingStart = nil
             finishTake(reportEmpty: reachedRecording)
             if needsRebuild { rebuildEngineIfActive() }
         }
@@ -317,8 +350,7 @@ final class StudioEngine: ObservableObject {
         guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else { fail(.noInput); return }
 
         // Arquivo da tomada: PCM float32 em .caf (o tap entrega float32 não intercalado).
-        let id = UUID()
-        let fileName = "track-\(id.uuidString).caf"
+        let fileName = "take-\(UUID().uuidString).caf"
         let folder = StudioStorage.folder(for: current.id)
         let url = folder.appendingPathComponent(fileName)
         let settings: [String: Any] = [
@@ -340,19 +372,38 @@ final class StudioEngine: ObservableObject {
             return
         }
 
+        // Faixa de destino: a armada; sem nada armado, cria uma faixa vazia e a arma (v1: faixa nova).
+        // Adicionar faixa vazia não reconstrói o grafo (não muda o que toca), só salva.
+        let targetID: UUID
+        let created: Bool
+        if let armed = armedTrackID, current.tracks.contains(where: { $0.id == armed }) {
+            targetID = armed
+            created = false
+        } else {
+            var track = StudioTrack(name: nextTrackName())
+            track.effects = monitorEffects
+            project?.tracks.append(track)       // didSet: só salva (faixa sem clips)
+            armedTrackID = track.id
+            targetID = track.id
+            created = true
+        }
+
         let beat = 60.0 / max(20, current.bpm)
         let lead = Double(max(0, countInBars) * max(1, current.beatsPerBar)) * beat
-        take = PendingTake(id: id, fileName: fileName, url: url, startPosition: startPosition,
+        take = PendingTake(fileName: fileName, url: url, startPosition: startPosition,
                            latency: session.inputLatency + session.outputLatency,
-                           sampleRate: inFormat.sampleRate)
+                           sampleRate: inFormat.sampleRate, trackID: targetID, createdTrack: created)
 
-        guard startTransport(from: startPosition, leadIn: lead, recordFile: file) else {
+        // A faixa armada não toca durante a gravação: o trecho a partir daqui será substituído.
+        guard startTransport(from: startPosition, leadIn: lead, recordFile: file, silencing: targetID) else {
             take = nil
             _ = recorder.finish()
             try? FileManager.default.removeItem(at: url)
+            if created { removeEmptyTrack(targetID) }
             return
         }
         position = startPosition
+        recordingStart = startPosition
         transport = lead > 0 ? .countIn(beat: 1) : .recording
     }
 
@@ -363,7 +414,7 @@ final class StudioEngine: ObservableObject {
             position = target
         case .playing:
             stopAudio()
-            if startTransport(from: target, leadIn: 0, recordFile: nil) {
+            if startTransport(from: target, leadIn: 0, recordFile: nil, silencing: nil) {
                 position = target
             } else {
                 transport = .stopped
@@ -373,20 +424,117 @@ final class StudioEngine: ObservableObject {
         }
     }
 
-    // MARK: - Faixas
-
-    func updateTrack(_ track: StudioTrack) {
-        guard let index = project?.tracks.firstIndex(where: { $0.id == track.id }) else { return }
-        guard project?.tracks[index] != track else { return }
-        project?.tracks[index] = track      // didSet aplica ao vivo e salva
+    /// Leva a cabeça de reprodução ao fim da faixa ("continuar de onde parou").
+    func seekToEnd(of trackID: UUID) {
+        guard let track = project?.tracks.first(where: { $0.id == trackID }) else { return }
+        seek(to: track.end)
     }
 
+    // MARK: - Faixas
+
+    /// Atualiza nome/volume/pan/mudo/solo/efeitos. Os clips (e campos legados) da faixa NÃO vêm do
+    /// parâmetro: são preservados do projeto atual, para uma cópia antiga da faixa na UI não desfazer
+    /// uma gravação/edição de clips. Para mexer em clips use moveClip/deleteClip/record.
+    func updateTrack(_ track: StudioTrack) {
+        guard let index = project?.tracks.firstIndex(where: { $0.id == track.id }),
+              let existing = project?.tracks[index] else { return }
+        var merged = track
+        merged.clips = existing.clips
+        merged.fileName = existing.fileName
+        merged.offset = existing.offset
+        merged.duration = existing.duration
+        guard existing != merged else { return }
+        project?.tracks[index] = merged     // didSet aplica ao vivo e salva
+    }
+
+    /// Apaga a faixa e os arquivos de áudio dela que nenhuma outra faixa usa.
     func deleteTrack(_ id: UUID) {
         guard let current = project, let track = current.tracks.first(where: { $0.id == id }) else { return }
         if transport != .stopped { stop() }
-        let url = StudioStorage.folder(for: current.id).appendingPathComponent(track.fileName)
+        var files = Set(track.clips.map { $0.fileName })
+        if !track.fileName.isEmpty { files.insert(track.fileName) }
+        // stop() pode ter acabado de gravar nesta faixa: relê os clips atuais.
+        if let fresh = project?.tracks.first(where: { $0.id == id }) {
+            for clip in fresh.clips { files.insert(clip.fileName) }
+        }
+        if armedTrackID == id { armedTrackID = nil }
         project?.tracks.removeAll { $0.id == id }   // didSet reconstrói o grafo e salva
-        try? FileManager.default.removeItem(at: url)
+        if let updated = project {
+            StudioTimeline.deleteUnreferenced(files, project: updated,
+                                              folder: StudioStorage.folder(for: current.id))
+        }
+    }
+
+    /// Cria uma faixa vazia ("Faixa N" se name for nil/vazio), salva e a deixa armada
+    /// (o armar é ignorado durante contagem/gravação). Não reconstrói o grafo.
+    @discardableResult
+    func addEmptyTrack(name: String? = nil) -> StudioTrack {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var track = StudioTrack(name: trimmed.isEmpty ? nextTrackName() : trimmed)
+        track.effects = .preset(.none)
+        guard project != nil else {
+            fail(.noProjectOpen)
+            return track
+        }
+        project?.tracks.append(track)       // didSet salva (faixa sem clips: grafo intacto)
+        switch transport {
+        case .stopped, .playing: armedTrackID = track.id
+        case .countIn, .recording: break
+        }
+        return track
+    }
+
+    /// Arma (ou desarma com nil) a faixa da próxima gravação. Ignorado se o transporte não estiver
+    /// parado ou se a faixa não existir no projeto aberto.
+    func arm(_ trackID: UUID?) {
+        guard transport == .stopped else { return }
+        guard let trackID else { armedTrackID = nil; return }
+        guard project?.tracks.contains(where: { $0.id == trackID }) == true else { return }
+        armedTrackID = trackID
+    }
+
+    /// Move um clip na linha do tempo (offset >= 0). Só com o transporte parado.
+    func moveClip(_ clipID: UUID, in trackID: UUID, to offset: TimeInterval) {
+        guard transport == .stopped, offset.isFinite,
+              let t = project?.tracks.firstIndex(where: { $0.id == trackID }),
+              var track = project?.tracks[t],
+              let c = track.clips.firstIndex(where: { $0.id == clipID }) else { return }
+        let target = max(0, offset)
+        guard abs(track.clips[c].offset - target) > 0.000_1 else { return }
+        track.clips[c].offset = target
+        track.studioSyncLegacyFields()      // reordena por offset
+        project?.tracks[t] = track          // didSet reconstrói o grafo e salva
+    }
+
+    /// Remove um clip (apaga o arquivo se nenhum outro clip do projeto o usa). Só parado.
+    func deleteClip(_ clipID: UUID, in trackID: UUID) {
+        guard transport == .stopped, let current = project,
+              let t = current.tracks.firstIndex(where: { $0.id == trackID }),
+              let clip = current.tracks[t].clips.first(where: { $0.id == clipID }) else { return }
+        var track = current.tracks[t]
+        track.clips.removeAll { $0.id == clipID }
+        track.studioSyncLegacyFields()
+        project?.tracks[t] = track          // didSet reconstrói o grafo e salva
+        if let updated = project {
+            StudioTimeline.deleteUnreferenced([clip.fileName], project: updated,
+                                              folder: StudioStorage.folder(for: current.id))
+        }
+    }
+
+    /// Forma de onda do trecho tocado do clip (fileStart…fileStart+duration): `buckets` picos lineares
+    /// 0…1 (máximo absoluto entre canais; não normalizado pelo clip). Calcula fora da main thread e
+    /// guarda "<arquivo>.peaks" na pasta do projeto; chamadas seguintes só fatiam. [] em erro.
+    func waveform(for clip: StudioClip, buckets: Int) async -> [Float] {
+        guard buckets > 0, let url = fileURL(for: clip) else { return [] }
+        return await StudioWaveforms.waveform(fileURL: url, fileStart: clip.fileStart,
+                                              duration: clip.duration, buckets: buckets)
+    }
+
+    /// Tira uma faixa criada por record() que ficou sem nenhum clip.
+    private func removeEmptyTrack(_ id: UUID) {
+        guard let track = project?.tracks.first(where: { $0.id == id }), track.clips.isEmpty else { return }
+        if armedTrackID == id { armedTrackID = nil }
+        project?.tracks.removeAll { $0.id == id }
     }
 
     func importAudio(from url: URL, name: String) async throws -> StudioTrack {
@@ -415,11 +563,11 @@ final class StudioEngine: ObservableObject {
         }
 
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        var track = StudioTrack(name: trimmed.isEmpty ? url.deletingPathExtension().lastPathComponent : trimmed,
-                                fileName: result.fileName)
+        var track = StudioTrack(name: trimmed.isEmpty ? url.deletingPathExtension().lastPathComponent : trimmed)
         track.id = trackID
         track.isImported = true
-        track.duration = result.duration
+        track.clips = [StudioClip(fileName: result.fileName, offset: 0, fileStart: 0, duration: result.duration)]
+        track.studioSyncLegacyFields()
         project?.tracks.append(track)       // didSet reconstrói o grafo e salva
         return track
     }
@@ -726,13 +874,10 @@ final class StudioEngine: ObservableObject {
         guard let project else { return }
         let folder = StudioStorage.folder(for: project.id)
         var missing: [String] = []
-        for track in project.tracks {
-            let url = folder.appendingPathComponent(track.fileName)
-            guard let file = try? AVAudioFile(forReading: url), file.length > 0 else {
-                missing.append(track.name)
-                continue
-            }
-            let chain = StudioTrackChain(trackID: track.id, file: file)
+        for track in project.tracks where !track.clips.isEmpty {
+            let chain = StudioTrackChain(trackID: track.id, clips: track.clips, folder: folder)
+            if chain.missingClips > 0 { missing.append(track.name) }
+            guard chain.isPlayable else { continue }
             chain.install(in: engine, destination: destination, format: format)
             chain.output.installTap(onBus: 0, bufferSize: 1024, format: nil,
                                     block: StudioTaps.trackTap(id: track.id, meters: meters))
@@ -792,7 +937,7 @@ final class StudioEngine: ObservableObject {
         }
         for chain in chains.values {
             chain.output.removeTap(onBus: 0)
-            chain.player.stop()
+            chain.stop()
         }
         click?.stop()
         old.stop()
@@ -849,7 +994,9 @@ final class StudioEngine: ObservableObject {
 
     /// Agenda todas as faixas, o clique e (opcional) a gravação a partir do mesmo instante de host.
     /// `leadIn` = duração da contagem: a posição `from` da música soa leadIn segundos após o início.
-    private func startTransport(from: TimeInterval, leadIn: TimeInterval, recordFile: AVAudioFile?) -> Bool {
+    /// `silencing` = faixa que não toca (a faixa armada durante a gravação).
+    private func startTransport(from: TimeInterval, leadIn: TimeInterval, recordFile: AVAudioFile?,
+                                silencing: UUID?) -> Bool {
         guard let engine, engine.isRunning, let project else {
             lastError = "O áudio do Estúdio não está pronto. Tente de novo."
             return false
@@ -859,8 +1006,12 @@ final class StudioEngine: ObservableObject {
 
         for track in project.tracks {
             guard let chain = chains[track.id] else { continue }
-            if chain.schedule(songPosition: from, offset: track.offset, leadIn: leadIn) {
-                chain.player.play(at: startTime)
+            if track.id == silencing {
+                chain.stop()
+                continue
+            }
+            if chain.schedule(songPosition: from, leadIn: leadIn) {
+                chain.play(at: startTime)
             }
         }
         if let recordFile {
@@ -881,7 +1032,7 @@ final class StudioEngine: ObservableObject {
     }
 
     private func stopAudio() {
-        for chain in chains.values { chain.player.stop() }
+        for chain in chains.values { chain.stop() }
         click?.stop()
         UIApplication.shared.isIdleTimerDisabled = false
     }
@@ -889,6 +1040,7 @@ final class StudioEngine: ObservableObject {
     // MARK: - Tomada
 
     private func finishTake(reportEmpty: Bool) {
+        recordingStart = nil
         guard let pending = take else {
             _ = recorder.finish()
             return
@@ -897,28 +1049,65 @@ final class StudioEngine: ObservableObject {
         let result = recorder.finish()     // fecha o arquivo
         let seconds = pending.sampleRate > 0 ? Double(result.frames) / pending.sampleRate : 0
 
-        if let failure = result.failure {
+        func discard() {
             try? FileManager.default.removeItem(at: pending.url)
+            if pending.createdTrack { removeEmptyTrack(pending.trackID) }
+        }
+
+        if let failure = result.failure {
+            discard()
             lastError = "Erro ao gravar: \(failure)."
             return
         }
         guard seconds >= 0.2 else {
-            try? FileManager.default.removeItem(at: pending.url)
+            discard()
             if reportEmpty { lastError = "A gravação ficou curta demais e não foi salva." }
             return
         }
-        guard project != nil else {
+        guard let current = project else {
             try? FileManager.default.removeItem(at: pending.url)
             return
         }
 
-        var track = StudioTrack(name: nextTrackName(), fileName: pending.fileName)
-        track.id = pending.id
-        track.offset = pending.startPosition - pending.latency
-        track.effects = monitorEffects
-        track.isImported = false
-        track.duration = seconds
-        project?.tracks.append(track)       // didSet (transporte já parado) reconstrói o grafo e salva
+        // Clip novo, com a compensação de latência. Começo antes de 0 é aparado (fileStart).
+        var clip = StudioClip(fileName: pending.fileName, offset: pending.startPosition - pending.latency,
+                              fileStart: 0, duration: seconds)
+        if clip.offset < 0 {
+            let cut = -clip.offset
+            clip.offset = 0
+            clip.fileStart = cut
+            clip.duration = seconds - cut
+        }
+        guard clip.duration >= 0.05 else {
+            discard()
+            if reportEmpty { lastError = "A gravação ficou curta demais e não foi salva." }
+            return
+        }
+
+        if let index = current.tracks.firstIndex(where: { $0.id == pending.trackID }) {
+            var track = current.tracks[index]
+            let previousFiles = Set(track.clips.map { $0.fileName })
+            // Primeira gravação numa faixa sem efeito: herda o efeito do monitoramento (como na v1).
+            if track.clips.isEmpty && track.effects == EffectSettings.preset(.none) {
+                track.effects = monitorEffects
+            }
+            track.clips = StudioTimeline.punchIn(clip, into: track.clips)
+            track.studioSyncLegacyFields()
+            project?.tracks[index] = track      // didSet (transporte já parado) reconstrói o grafo e salva
+            if let updated = project {
+                StudioTimeline.deleteUnreferenced(previousFiles, project: updated,
+                                                  folder: StudioStorage.folder(for: current.id))
+            }
+        } else {
+            // A faixa sumiu durante a gravação: a tomada vira uma faixa nova (comportamento v1).
+            var track = StudioTrack(name: nextTrackName())
+            track.effects = monitorEffects
+            track.isImported = false
+            track.clips = [clip]
+            track.studioSyncLegacyFields()
+            project?.tracks.append(track)
+            armedTrackID = track.id
+        }
     }
 
     /// Descarta a tomada em andamento (usado quando o projeto é trocado por fora no meio da gravação).
@@ -926,6 +1115,7 @@ final class StudioEngine: ObservableObject {
         stopAudio()
         transport = .stopped
         trackLevels = [:]
+        recordingStart = nil
         if let pending = take {
             take = nil
             _ = recorder.finish()
@@ -1016,18 +1206,27 @@ final class StudioEngine: ObservableObject {
             }
             if transport != .stopped { abortTransport() }
             position = 0
+            armedTrackID = nil
             if let new { upsertInList(new) }
             rebuildEngineIfActive()
             return
         }
 
         guard let new, let old, new != old else { return }
+        if let armed = armedTrackID, !new.tracks.contains(where: { $0.id == armed }) {
+            armedTrackID = nil      // faixa armada apagada
+        }
         let oldIDs = old.tracks.map { $0.id }
         let newIDs = new.tracks.map { $0.id }
-        if oldIDs != newIDs {
+        if Self.playbackLayout(old) != Self.playbackLayout(new) {
+            // Mudou o que toca (faixa com clips entrou/saiu, clip movido/aparado/apagado).
             if transport == .playing { stop() }
             if transport == .stopped { rebuildEngineIfActive() } else { needsRebuild = true }
             saveNow()       // mudança estrutural: salva já
+        } else if oldIDs != newIDs {
+            // Só faixas vazias entraram/saíram ou a ordem mudou: o grafo continua válido.
+            applyMixToChains()
+            saveNow()
         } else {
             applyMixToChains()
             upsertInList(new)
@@ -1036,6 +1235,13 @@ final class StudioEngine: ObservableObject {
         if old.bpm != new.bpm || old.beatsPerBar != new.beatsPerBar {
             click?.setTempo(bpm: new.bpm, beatsPerBar: new.beatsPerBar)
         }
+    }
+
+    /// Clips por faixa (só faixas com clips): se isso muda, o grafo precisa ser reconstruído.
+    private static func playbackLayout(_ p: StudioProject) -> [UUID: [StudioClip]] {
+        var map: [UUID: [StudioClip]] = [:]
+        for track in p.tracks where !track.clips.isEmpty { map[track.id] = track.clips }
+        return map
     }
 
     private func scheduleSave() {
@@ -1056,6 +1262,9 @@ final class StudioEngine: ObservableObject {
         saveTask = nil
         guard var current = project else { return }
         current.updatedAt = Date()
+        // Rede de segurança: se a UI mexeu em `clips` direto, o espelho legado é corrigido antes de salvar
+        // (senão uma faixa esvaziada voltaria a ter o clip antigo ao reabrir, pela migração v1 do decoder).
+        for i in current.tracks.indices { current.tracks[i].studioSyncLegacyFields() }
         suppressObservation = true
         project = current
         suppressObservation = false

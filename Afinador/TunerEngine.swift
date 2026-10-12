@@ -30,6 +30,8 @@ final class TunerEngine: ObservableObject {
     @Published var frequency: Double? = nil
     @Published var targetMidi: Int? = nil
     @Published var cents: Int = 0
+    /// Cents sem arredondar, para o ponteiro se mover de forma contínua.
+    @Published var centsPrecise: Double = 0
     @Published var stringIndex: Int? = nil
     @Published var tunedStrings = Set<Int>()
 
@@ -48,7 +50,8 @@ final class TunerEngine: ObservableObject {
     private let analysisQueue = DispatchQueue(label: "afinador.analysis")
     private var samples: [Float] = []
     private let window = 4096
-    private let hop = 2048
+    // ~43 leituras por segundo: o ponteiro recebe alvos novos com frequência e anda sem trancos.
+    private let hop = 1024
     private var sampleRate: Double = 48000
     private var history: [Double] = []
     private var silentFrames = 0
@@ -190,10 +193,12 @@ final class TunerEngine: ObservableObject {
             while Double(target) - m > 6 { target -= 12 }
         }
 
-        let c = Int(((m - Double(target)) * 100).rounded())
+        let precise = (m - Double(target)) * 100
+        let c = Int(precise.rounded())
         frequency = f
         targetMidi = target
         cents = c
+        centsPrecise = precise
         stringIndex = idx
 
         if abs(c) <= 5 {
@@ -212,6 +217,7 @@ final class TunerEngine: ObservableObject {
         frequency = nil
         targetMidi = nil
         cents = 0
+        centsPrecise = 0
         stringIndex = nil
         inTuneSince = nil
     }

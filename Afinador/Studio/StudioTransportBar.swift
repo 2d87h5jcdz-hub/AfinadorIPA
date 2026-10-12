@@ -25,6 +25,18 @@ struct StudioTransportBar: View {
 
     private var beatsPerBar: Int { max(studio.project?.beatsPerBar ?? 4, 1) }
 
+    /// Faixa armada (destino da próxima gravação); nil = a gravação cria uma faixa nova.
+    private var armedTrack: StudioTrack? {
+        guard let id = studio.armedTrackID else { return nil }
+        return studio.project?.tracks.first(where: { $0.id == id })
+    }
+
+    /// "Gravar em Faixa 2" / "Gravar em nova faixa" (ou "Gravando em …" durante a tomada).
+    private var recordTargetText: String {
+        let target: String = armedTrack?.name ?? "nova faixa"
+        return isArmed ? "Gravando em \(target)" : "Gravar em \(target)"
+    }
+
     private var barBeatText: String {
         let bpm: Double = max(studio.project?.bpm ?? 90, 1)
         let beatLength: Double = 60.0 / bpm
@@ -86,12 +98,14 @@ struct StudioTransportBar: View {
             .disabled(isArmed)
             .accessibilityLabel("Linha do tempo")
             .accessibilityValue(StudioUIFormat.spokenTime(studio.position))
-            HStack {
+            HStack(spacing: 6) {
                 Text(barBeatText)
-                Spacer()
+                    .foregroundColor(.muted)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                recordTargetLabel
             }
             .font(.system(size: 11, design: .monospaced))
-            .foregroundColor(.muted)
         }
     }
 
@@ -105,14 +119,55 @@ struct StudioTransportBar: View {
         )
     }
 
+    private var recordTargetLabel: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(Color.off)
+                .frame(width: 7, height: 7)
+            Text(recordTargetText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .foregroundColor(armedTrack == nil ? .muted : .fg)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(recordTargetText)
+    }
+
     // MARK: Botões
 
     private var buttons: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             rewindButton
+            endOfTrackButton
             playButton
             recordButton
         }
+    }
+
+    private var endOfTrackHint: String {
+        guard let track = armedTrack else { return "Arme uma faixa primeiro" }
+        return "Continua a gravação de onde \(track.name) parou"
+    }
+
+    /// "⇥ fim da faixa": leva a cabeça ao fim da faixa armada (continuar de onde parou).
+    private var endOfTrackButton: some View {
+        let enabled: Bool = armedTrack != nil && !isArmed
+        return Button {
+            if let id = armedTrack?.id {
+                studio.seekToEnd(of: id)
+            }
+        } label: {
+            Image(systemName: "arrow.right.to.line")
+                .font(.system(size: 18, weight: .semibold))
+                .frame(width: 52, height: 52)
+                .background(Circle().fill(Color.bg))
+                .overlay(Circle().stroke(Color.line))
+                .foregroundColor(.fg)
+        }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .accessibilityLabel("Ir para o fim da faixa armada")
+        .accessibilityHint(endOfTrackHint)
     }
 
     private var rewindButton: some View {
@@ -160,8 +215,8 @@ struct StudioTransportBar: View {
         } label: {
             StudioRecordGlyph(isArmed: isArmed)
         }
-        .accessibilityLabel(isArmed ? "Parar gravação" : "Gravar nova faixa")
-        .accessibilityHint(isArmed ? "" : "As outras faixas tocam enquanto você grava")
+        .accessibilityLabel(isArmed ? "Parar gravação" : recordTargetText)
+        .accessibilityHint(isArmed ? "" : "Grava a partir da cabeça de reprodução; as outras faixas tocam enquanto você grava")
     }
 }
 
