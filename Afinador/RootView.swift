@@ -31,18 +31,23 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $tab) {
             TunerView(tuner: tuner)
+                .statusBarCover()
                 .tabItem { Label("Afinador", systemImage: "tuningfork") }
                 .tag(0)
             ChordsView(a4: tuner.a4)
+                .statusBarCover()
                 .tabItem { Label("Acordes", systemImage: "guitars") }
                 .tag(1)
             MetronomeView(metronome: metronome)
+                .statusBarCover()
                 .tabItem { Label("Metrônomo", systemImage: "metronome") }
                 .tag(2)
             StudioView(studio: studio)
+                .statusBarCover()
                 .tabItem { Label("Estúdio", systemImage: "waveform") }
                 .tag(3)
             PracticeView(studio: studio, openStudio: { tab = 3 })
+                .statusBarCover()
                 .tabItem { Label("Treino", systemImage: "music.note.list") }
                 .tag(4)
         }
@@ -52,4 +57,25 @@ struct ContentView: View {
             if newTab >= 3 && metronome.playing { metronome.stop() }
         }
     }
+}
+
+/// Faixa da cor do fundo atrás da barra de status: o conteúdo que rola não passa por baixo
+/// do relógio e da bateria (na horizontal a altura é zero e nada aparece).
+struct StatusBarCover: ViewModifier {
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            // O leitor ocupa a tela toda; safeAreaInsets.top é a altura da barra de status.
+            GeometryReader { geo in
+                Color.bg
+                    .frame(maxWidth: .infinity)
+                    .frame(height: geo.safeAreaInsets.top)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        }
+    }
+}
+
+extension View {
+    func statusBarCover() -> some View { modifier(StatusBarCover()) }
 }

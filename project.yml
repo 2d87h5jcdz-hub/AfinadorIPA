@@ -25,6 +25,8 @@ targets:
       path: Afinador/Info.plist
       properties:
         CFBundleDisplayName: Pestana
+        CFBundleDevelopmentRegion: pt-BR
+        CFBundleLocalizations: [pt-BR]
         CFBundleName: Pestana
         NSMicrophoneUsageDescription: O app usa o microfone para afinar o instrumento e gravar suas músicas. Nada sai do seu iPhone sem você compartilhar.
         UILaunchScreen: {}

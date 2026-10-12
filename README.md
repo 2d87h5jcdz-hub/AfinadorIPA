@@ -2,7 +2,7 @@
 
 App gratuito para iPhone, **sem anúncios**, para quem toca: afinador, acordes, metrônomo, um **estúdio de gravação em camadas** e um **modo treino** com separação de instrumentos por IA, que roda no próprio celular.
 
-<!-- PRINT: docs/prints/00-capa.png (opcional: montagem com 3 telas lado a lado) -->
+<p align="center"><img src="docs/prints/00-capa.jpg" width="820"></p>
 
 ## 💛 Apoie o projeto
 
@@ -57,7 +57,7 @@ O app não está na App Store. Ele é distribuído como arquivo **.ipa**, que vo
 
 ## Afinador
 
-<!-- PRINT: docs/prints/01-afinador.png -->
+<img src="docs/prints/01-afinador.jpg" width="260">
 
 - Toque uma corda: o ponteiro mostra se está **baixa** (esquerda) ou **alta** (direita). No centro, fica verde: **afinada ✓**.
 - **Automático** detecta sozinho qual corda você está tocando. **Por corda** deixa você escolher a corda tocando nela.
@@ -68,7 +68,7 @@ O app não está na App Store. Ele é distribuído como arquivo **.ipa**, que vo
 
 ## Acordes
 
-<!-- PRINT: docs/prints/02-acordes.png -->
+<img src="docs/prints/02-acordes.jpg" width="260">
 
 - Escolha a **nota** (Dó, Ré, Mi…) e o **tipo** (maior, menor, com sétima…). O desenho mostra onde colocar os dedos.
 - Deslize o desenho para o lado para ver outras posições do mesmo acorde.
@@ -78,7 +78,7 @@ O app não está na App Store. Ele é distribuído como arquivo **.ipa**, que vo
 
 ## Metrônomo
 
-<!-- PRINT: docs/prints/03-metronomo.png -->
+<img src="docs/prints/03-metronomo.jpg" width="260">
 
 - Ajuste o **BPM** pelos botões ou pela barra, ou toque em **Tap** no ritmo da música para ele descobrir o andamento.
 - Escolha o **compasso** (2/4, 3/4, 4/4, 6/8…). O primeiro tempo é acentuado.
@@ -92,13 +92,13 @@ O Estúdio grava **em camadas**: você grava o violão, depois grava a voz por c
 
 ### 1. Criar uma música
 
-<!-- PRINT: docs/prints/04-estudio-lista.png -->
+<img src="docs/prints/04-estudio-lista.jpg" width="260">
 
 Toque em **Nova música** e dê um nome. Cada música é um projeto com as suas faixas. Para renomear ou apagar, use o menu **⋯** da música.
 
 ### 2. Ajustes da música e entrada
 
-<!-- PRINT: docs/prints/05-estudio-projeto.png -->
+<img src="docs/prints/05-estudio-projeto.jpg" width="260">
 
 - **BPM, compasso, clique e contagem**: toque na barra para abrir. Com o clique ligado, você ouve o metrônomo enquanto grava, mas ele **não entra na gravação**. A contagem dá 1 ou 2 compassos antes de começar a gravar.
 - **Entrada**: escolha de onde vem o som (**Microfone do iPhone**, microfone do fone ou interface USB) e ajuste o **Ganho** se a captação estiver baixa. A barra verde mostra o nível. Toque alto, mas sem encostar no fim.
@@ -106,7 +106,7 @@ Toque em **Nova música** e dê um nome. Cada música é um projeto com as suas 
 
 ### 3. Faixas e linha do tempo
 
-<!-- PRINT: docs/prints/06-estudio-timeline.png -->
+<img src="docs/prints/06-estudio-timeline.jpg" width="260">
 
 - Cada linha é uma **faixa**, e os blocos dourados são os trechos gravados, com a forma de onda.
 - **Nova faixa** cria uma faixa vazia, que já fica **armada** (bolinha vermelha cheia). A próxima gravação entra nela.
@@ -166,7 +166,7 @@ Toque em **Importar música (MP3, M4A, WAV)** e escolha o arquivo no app Arquivo
 
 ### 2. Tom, velocidade e repetição
 
-<!-- PRINT: docs/prints/12-treino-player.png -->
+<img src="docs/prints/12-treino-player.jpg" width="260">
 
 - **Tom**: suba ou desça em semitons. O app mostra como os acordes mudam, por exemplo "um acorde de C vira D".
 - **Velocidade**: desacelere sem mudar o tom, ótimo para pegar solos.
@@ -174,7 +174,7 @@ Toque em **Importar música (MP3, M4A, WAV)** e escolha o arquivo no app Arquivo
 
 ### 3. Separar instrumentos (IA)
 
-<!-- PRINT: docs/prints/13-treino-separacao.png -->
+<img src="docs/prints/13-treino-separando.jpg" width="260"> <img src="docs/prints/13-treino-separacao.jpg" width="260">
 
 - Toque em **Separar instrumentos (IA)**. Leva alguns minutos, porque a IA roda **no próprio iPhone**, sem internet. Deixe o app aberto.
 - Depois, use os atalhos **Karaokê** (sem voz), **Sem violão**, **Tudo**, ou ajuste cada instrumento (voz, bateria, baixo, guitarra, piano, outros).
@@ -184,7 +184,7 @@ Toque em **Importar música (MP3, M4A, WAV)** e escolha o arquivo no app Arquivo
 
 ## Usando na horizontal
 
-<!-- PRINT: docs/prints/14-horizontal.png -->
+<img src="docs/prints/14-horizontal.jpg" width="640">
 
 Todas as telas funcionam com o iPhone deitado. No Estúdio, a linha do tempo ganha a tela toda à direita, e os controles de gravação ficam à esquerda.
 

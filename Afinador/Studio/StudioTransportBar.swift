@@ -126,7 +126,7 @@ struct StudioTransportBar: View {
                 .frame(width: 7, height: 7)
             Text(recordTargetText)
                 .lineLimit(1)
-                .truncationMode(.middle)
+                .minimumScaleFactor(0.6)
         }
         .foregroundColor(armedTrack == nil ? .muted : .fg)
         .accessibilityElement(children: .ignore)

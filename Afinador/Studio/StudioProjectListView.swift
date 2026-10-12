@@ -124,7 +124,7 @@ struct StudioProjectCard: View {
     let onDelete: () -> Void
 
     private var details: String {
-        let date = project.updatedAt.formatted(date: .abbreviated, time: .shortened)
+        let date = project.updatedAt.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(Locale(identifier: "pt_BR")))
         return "\(StudioUIFormat.tracksCount(project.tracks.count)) · \(Int(project.bpm)) BPM · \(date)"
     }
 
