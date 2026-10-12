@@ -119,7 +119,7 @@ class StudioEngine(context: Context) {
         active = true
         // Microfone só com uma música aberta (na lista de músicas basta a saída).
         val withInput = hasMicPermission() && project != null
-        n.open(withInput, inputDeviceId())?.let { if (withInput) lastError = "Áudio: $it" }
+        n.open(withInput, inputDeviceId(), rawInput())?.let { if (withInput) lastError = "Áudio: $it" }
         n.setInputGain(inputGainDb)
         n.setMonitor(monitorEnabled, monitorEffects.toJson(ampPath(monitorEffects)).toString())
         project?.let { pushSong(it); n.setClick(it.bpm, it.beatsPerBar, clickEnabled) }
@@ -139,7 +139,7 @@ class StudioEngine(context: Context) {
 
     /** Microfone acabou de ser liberado: reabre em duplex. */
     fun micGranted() {
-        if (active && project != null) native?.open(true, inputDeviceId())
+        if (active && project != null) native?.open(true, inputDeviceId(), rawInput())
         updateRoute()
     }
 
@@ -184,12 +184,18 @@ class StudioEngine(context: Context) {
         return target?.id ?: 0
     }
 
+    /** Interface USB = sinal cru; microfones do celular/fone = com ajuste automático de nível. */
+    private fun rawInput(id: Int = inputDeviceId()): Boolean {
+        val t = (inputs.ifEmpty { scanInputs() }).firstOrNull { it.id == id }?.type
+        return t == AudioDeviceInfo.TYPE_USB_DEVICE || t == AudioDeviceInfo.TYPE_USB_HEADSET
+    }
+
     /** Troca a entrada (só parado). A escolha fica salva pelo tipo de entrada. */
     fun selectInput(id: Int) {
         if (transport != Transport.STOPPED) return
         val opt = inputs.firstOrNull { it.id == id } ?: return
         prefs.edit().putInt("studioInputType", opt.type).apply()
-        if (active && project != null && hasMicPermission()) native?.open(true, id)
+        if (active && project != null && hasMicPermission()) native?.open(true, id, rawInput(id))
         updateRoute()
     }
 
@@ -216,7 +222,7 @@ class StudioEngine(context: Context) {
         val before = selectedInputId
         updateRoute()
         if (active && transport == Transport.STOPPED && project != null && hasMicPermission() && selectedInputId != before) {
-            native?.open(true, selectedInputId)
+            native?.open(true, selectedInputId, rawInput(selectedInputId))
         }
     }
 
@@ -247,7 +253,7 @@ class StudioEngine(context: Context) {
         armedTrackId = null
         pushSong(p)
         native?.setClick(p.bpm, p.beatsPerBar, clickEnabled)
-        if (active) native?.open(hasMicPermission(), inputDeviceId())
+        if (active) native?.open(hasMicPermission(), inputDeviceId(), rawInput())
         pitchFailed.clear()
         schedulePitchRefresh()
         scope.launch(Dispatchers.IO) { p.tracks.flatMap { it.clips }.forEach { Waveforms.compute(store.file(p.id, it.fileName)) } }
@@ -516,7 +522,7 @@ class StudioEngine(context: Context) {
         if (!hasMicPermission()) { lastError = "Libere o microfone para gravar."; return }
         if (!active) activate()
         if (!n.hasInput()) {
-            n.open(true, inputDeviceId())
+            n.open(true, inputDeviceId(), rawInput())
             if (!n.hasInput()) { lastError = "Não consegui abrir o microfone."; return }
         }
         if (transport == Transport.PLAYING) { n.stop(); transport = Transport.STOPPED }

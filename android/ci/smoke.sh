@@ -76,6 +76,7 @@ alive "abrir o app"
 
 # Concede o microfone (como se o usuário tivesse tocado em Permitir) e volta ao app.
 adb shell pm grant $PKG android.permission.RECORD_AUDIO
+adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS || true
 adb shell input keyevent KEYCODE_HOME
 sleep 1
 adb shell am start -W -n $PKG/.MainActivity

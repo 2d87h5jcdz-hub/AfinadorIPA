@@ -13,7 +13,7 @@ class NativeStudio {
     private val h = nCreate()
 
     /** inputDevice = id do AudioDeviceInfo da entrada (0 = a padrão do Android). */
-    fun open(withInput: Boolean, inputDevice: Int = 0): String? = nOpen(h, withInput, inputDevice)
+    fun open(withInput: Boolean, inputDevice: Int = 0, raw: Boolean = false): String? = nOpen(h, withInput, inputDevice, raw)
     fun close() = nClose(h)
     fun hasInput() = nHasInput(h)
     fun setSong(json: String): String? = nSetSong(h, json)
@@ -36,7 +36,7 @@ class NativeStudio {
 
     private external fun nCreate(): Long
     private external fun nDestroy(h: Long)
-    private external fun nOpen(h: Long, withInput: Boolean, device: Int): String?
+    private external fun nOpen(h: Long, withInput: Boolean, device: Int, raw: Boolean): String?
     private external fun nClose(h: Long)
     private external fun nHasInput(h: Long): Boolean
     private external fun nSetSong(h: Long, json: String): String?

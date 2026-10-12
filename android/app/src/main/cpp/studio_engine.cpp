@@ -24,16 +24,17 @@ StudioEngine::~StudioEngine() {
   close();
 }
 
-std::string StudioEngine::open(bool withInput, int inputDeviceId) {
+std::string StudioEngine::open(bool withInput, int inputDeviceId, bool rawInput) {
   std::lock_guard<std::mutex> g(mStreamMutex);
   if (mOutput) {
-    if (withInput == (mInput != nullptr) && inputDeviceId == mInputDevice) return "";
+    if (withInput == (mInput != nullptr) && inputDeviceId == mInputDevice && rawInput == mRawInput) return "";
     // Muda de "só saída" para duplex (ou o contrário): reabre.
     if (mInput) { mInput->stop(); mInput->close(); mInput.reset(); }
     mOutput->stop(); mOutput->close(); mOutput.reset();
   }
   mWantInput = withInput;
   mInputDevice = inputDeviceId;
+  mRawInput = rawInput;
   oboe::AudioStreamBuilder ob;
   ob.setDirection(oboe::Direction::Output)
       ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
@@ -63,11 +64,13 @@ std::string StudioEngine::open(bool withInput, int inputDeviceId) {
         ->setChannelCount(1)
         ->setSampleRate(kSampleRate)
         ->setSampleRateConversionQuality(oboe::SampleRateConversionQuality::Medium)
-        ->setInputPreset(oboe::InputPreset::Unprocessed);
+        // Interface USB: sinal cru. Microfone do celular/fone: "Camcorder", que tem ajuste
+        // automático de nível (como o iPhone) — no modo cru a voz chegava estourada.
+        ->setInputPreset(rawInput ? oboe::InputPreset::Unprocessed : oboe::InputPreset::Camcorder);
     if (inputDeviceId > 0) ib.setDeviceId(inputDeviceId);
     r = ib.openStream(mInput);
     if (r != oboe::Result::OK) {
-      ib.setInputPreset(oboe::InputPreset::VoiceRecognition);
+      ib.setInputPreset(oboe::InputPreset::Generic);
       r = ib.openStream(mInput);
     }
     if (r != oboe::Result::OK) {
@@ -103,14 +106,15 @@ void StudioEngine::onErrorAfterClose(oboe::AudioStream*, oboe::Result error) {
   LOGI("stream caiu (%s), reabrindo", oboe::convertToText(error));
   const bool withInput = mWantInput;
   const int device = mInputDevice;
-  std::thread([this, withInput, device] {
+  const bool raw = mRawInput;
+  std::thread([this, withInput, device, raw] {
     {
       std::lock_guard<std::mutex> g(mStreamMutex);
       if (mInput) { mInput->close(); mInput.reset(); }
       mOutput.reset();
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
-    open(withInput, device);
+    open(withInput, device, raw);
   }).detach();
 }
 

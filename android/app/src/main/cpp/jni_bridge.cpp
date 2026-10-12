@@ -25,8 +25,8 @@ extern "C" {
 
 JNIEXPORT jlong JNICALL FN(nCreate)(JNIEnv*, jobject) { return reinterpret_cast<jlong>(new StudioEngine()); }
 JNIEXPORT void JNICALL FN(nDestroy)(JNIEnv*, jobject, jlong h) { delete E(h); }
-JNIEXPORT jstring JNICALL FN(nOpen)(JNIEnv* env, jobject, jlong h, jboolean in, jint device) {
-  return jstr(env, E(h)->open(in, device));
+JNIEXPORT jstring JNICALL FN(nOpen)(JNIEnv* env, jobject, jlong h, jboolean in, jint device, jboolean raw) {
+  return jstr(env, E(h)->open(in, device, raw));
 }
 JNIEXPORT void JNICALL FN(nClose)(JNIEnv*, jobject, jlong h) { E(h)->close(); }
 JNIEXPORT jboolean JNICALL FN(nHasInput)(JNIEnv*, jobject, jlong h) { return E(h)->hasInput(); }
