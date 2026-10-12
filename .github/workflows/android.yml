@@ -1,0 +1,72 @@
+name: Gerar APK (Android)
+
+on:
+  push:
+    branches: [android]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparar Gradle (com cache)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Testes e APK de release (assinado)
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleRelease 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Mostrar erros de compilação
+        if: failure()
+        run: |
+          # O GitHub aceita só 10 anotações de erro por step: agrupa várias linhas por anotação.
+          enc() { sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}' | sed -e 's/\r//g'; }
+          grep -E '^(e: |ERROR:|.*error: |.*FAILED$|.*AAPT: error)' build.log | sed -e 's#file://[^ ]*/android/##' | sort -u | head -60 > errors.txt || true
+          # Testes que falharam
+          grep -E '^\S+Test > .* FAILED' -A3 build.log >> errors.txt || true
+          if [ -s errors.txt ]; then
+            split -l 6 errors.txt part_
+            for p in part_*; do echo "::error title=Erro de build::$(enc < "$p")"; done | head -8
+          fi
+          # Bloco "What went wrong" do Gradle
+          awk '/What went wrong:/{f=1} /\* Try:/{f=0} f' build.log | head -40 > wrong.txt || true
+          if [ -s wrong.txt ]; then echo "::error title=Gradle::$(enc < wrong.txt)"; fi
+
+      - name: Conferir assinatura do APK
+        run: |
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs "$APK" | head -5
+          "$BT/aapt2" dump badging "$APK" | head -3 || true
+          cp "$APK" "$GITHUB_WORKSPACE/PestanaEstudio.apk"
+          SIZE=$(du -h "$GITHUB_WORKSPACE/PestanaEstudio.apk" | cut -f1)
+          echo "::notice title=APK pronto::PestanaEstudio.apk ($SIZE) assinado — baixe o artifact PestanaEstudio-apk"
+
+      - name: Publicar APK como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PestanaEstudio-apk
+          path: PestanaEstudio.apk
+          if-no-files-found: error
+          retention-days: 90

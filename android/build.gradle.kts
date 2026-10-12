@@ -1,0 +1,6 @@
+// Projeto Android do Pestana Estúdio (independente do app iOS na pasta Afinador/).
+plugins {
+    id("com.android.application") version "8.11.1" apply false
+    id("org.jetbrains.kotlin.android") version "2.2.0" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.2.0" apply false
+}
