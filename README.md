@@ -116,7 +116,7 @@ Toque em **Nova música** e dê um nome. Cada música é um projeto com as suas 
 
 ### 4. Posicionar a cabeça de reprodução
 
-<!-- PRINT: docs/prints/07-estudio-zoom.png -->
+<img src="docs/prints/07-estudio-cabeca.jpg" width="640">
 
 - **Deslize o dedo na régua** (a faixa de cima, com os números dos compassos) para levar a cabeça até o ponto desejado.
 - **Arraste nas ondas** para andar pela música sem mexer na cabeça. **Um toque** nas ondas leva a cabeça até ali.
@@ -132,7 +132,7 @@ Toque em **Nova música** e dê um nome. Cada música é um projeto com as suas 
 
 ### 6. Editar trechos
 
-<!-- PRINT: docs/prints/08-estudio-trecho.png -->
+<img src="docs/prints/08-estudio-trecho.jpg" width="640">
 
 Toque num trecho para selecioná-lo. Aparecem as opções:
 
@@ -148,7 +148,7 @@ Cada faixa tem seus efeitos: presets prontos (**Violão aço, Violão nylon, Voz
 
 ### 8. Exportar
 
-<!-- PRINT: docs/prints/10-estudio-exportar.png -->
+<img src="docs/prints/10-estudio-exportar.jpg" width="640">
 
 Toque em **Exportar**, escolha **M4A** (menor, bom para WhatsApp) ou **WAV** (qualidade máxima) e compartilhe ou salve no Arquivos.
 
@@ -160,7 +160,7 @@ O modo Treino é para **estudar músicas**: mudar o tom, desacelerar, repetir um
 
 ### 1. Importar uma música
 
-<!-- PRINT: docs/prints/11-treino-lista.png -->
+<img src="docs/prints/11-treino-lista.jpg" width="260">
 
 Toque em **Importar música (MP3, M4A, WAV)** e escolha o arquivo no app Arquivos.
 
