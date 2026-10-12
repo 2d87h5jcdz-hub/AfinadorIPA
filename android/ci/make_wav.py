@@ -2,6 +2,7 @@
 import math, random, struct, sys, wave
 
 sr, secs = 44100, 30
+repeat = int(sys.argv[2]) if len(sys.argv) > 2 else 1  # repete o trecho (música longa)
 n = sr * secs
 L = [0.0] * n
 R = [0.0] * n
@@ -32,5 +33,7 @@ for i in range(n):  # "voz"
 peak = max(max(abs(x) for x in L), max(abs(x) for x in R))
 with wave.open(sys.argv[1], "wb") as w:
     w.setnchannels(2); w.setsampwidth(2); w.setframerate(sr)
-    w.writeframes(b"".join(struct.pack("<hh", int(L[i] / peak * 0.8 * 32767), int(R[i] / peak * 0.8 * 32767)) for i in range(n)))
+    frames = b"".join(struct.pack("<hh", int(L[i] / peak * 0.8 * 32767), int(R[i] / peak * 0.8 * 32767)) for i in range(n))
+    for _ in range(repeat):
+        w.writeframes(frames)
 print("ok", sys.argv[1])

@@ -101,7 +101,7 @@ tap_text "Estúdio" && shot 06-estudio
 tap_text "Treino" && shot 07-treino
 
 # --- Treino: importa um áudio pelo "Abrir com" (intent VIEW), toca, muda tom/velocidade e separa com IA
-python3 android/ci/make_wav.py /tmp/teste.wav
+python3 android/ci/make_wav.py /tmp/teste.wav 13
 adb push /tmp/teste.wav /sdcard/Music/teste.wav
 adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Music/teste.wav >/dev/null
 sleep 3

@@ -81,12 +81,14 @@ class ModelStore(filesDir: File) {
     }
 }
 
-private fun rssMb(): Long = try {
-    java.io.File("/proc/self/status").readLines().first { it.startsWith("VmRSS:") }
+private fun procMb(key: String): Long = try {
+    java.io.File("/proc/self/status").readLines().first { it.startsWith(key) }
         .filter { it.isDigit() }.toLong() / 1024
 } catch (_: Exception) {
     -1
 }
+
+private fun rssMb(): String = "${procMb("VmRSS:")} MB (pico ${procMb("VmHWM:")} MB)"
 
 /** Roda o HTDemucs (ONNX Runtime, CPU) sobre a música inteira e grava um arquivo por stem. */
 class DemucsOnnxSeparator(private val model: File) {
@@ -169,7 +171,7 @@ class DemucsOnnxSeparator(private val model: File) {
                         ).close()
                         android.util.Log.i(
                             "Pestana",
-                            "Demucs: segmento em %.1f s, memória %d MB".format((System.nanoTime() - t0) / 1e9, rssMb()),
+                            "Demucs: segmento em %.1f s, memória %s".format((System.nanoTime() - t0) / 1e9, rssMb()),
                         )
                     },
                     writer = { data, count ->
