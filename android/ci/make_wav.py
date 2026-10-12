@@ -1,7 +1,7 @@
-"""Gera um WAV de teste (12 s, 44,1 kHz estéreo) com bateria, baixo, acordes e uma 'voz'."""
+"""Gera um WAV de teste (30 s, 44,1 kHz estéreo) com bateria, baixo, acordes e uma 'voz'."""
 import math, random, struct, sys, wave
 
-sr, secs = 44100, 12
+sr, secs = 44100, 30
 n = sr * secs
 L = [0.0] * n
 R = [0.0] * n
