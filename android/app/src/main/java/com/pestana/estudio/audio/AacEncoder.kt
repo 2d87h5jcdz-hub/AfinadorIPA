@@ -12,7 +12,7 @@ import java.nio.ByteOrder
 object AacEncoder {
     fun encode(pcm: PcmFile, dest: File, bitrate: Int = 192_000, cancelled: () -> Boolean = { false }) {
         val tmp = File(dest.parentFile, dest.name + ".part")
-        val sr = PcmFile.SAMPLE_RATE
+        val sr = pcm.sampleRate
         val fmt = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sr, 2).apply {
             setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
             setInteger(MediaFormat.KEY_BIT_RATE, bitrate)

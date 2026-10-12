@@ -142,6 +142,28 @@ if wait_text "MÚSICA ORIGINAL" 60; then
       scroll_down
       shot 15-treino-instrumentos-2 1
       echo "::notice title=Separação::Concluída no emulador"
+      # --- Estúdio: usa os stems como base, grava 4 s por cima, toca e exporta
+      scroll_down; scroll_down
+      if tap_text "Usar como base no Estúdio" && wait_text "Faixas" 120; then
+        sleep 3; shot 17-estudio-base 1
+        tap_text "Gravar"; sleep 8
+        shot 18-estudio-gravando 0
+        tap_text "Parar gravação"; sleep 3
+        shot 19-estudio-gravado 1
+        alive "gravar no Estúdio"
+        tap_text "Tocar"; sleep 3; shot 20-estudio-tocando 0
+        tap_text "Parar"; sleep 1
+        tap_text "Exportar"; sleep 1; tap_text "M4A"; sleep 15
+        shot 21-estudio-exportar 1
+        alive "exportar"
+        adb shell input keyevent KEYCODE_BACK; sleep 2
+        adb shell input keyevent KEYCODE_BACK; sleep 2
+        shot 22-estudio-lista 1
+        tap_text "Treino"; sleep 2
+      else
+        echo "::error title=Estúdio::Não abriu o projeto a partir do Treino"
+        FAIL=1
+      fi
     else
       shot 13b-treino-separacao-falhou 1
       echo "::error title=Separação::Não terminou (ou falhou) no emulador"
@@ -166,6 +188,7 @@ adb shell dumpsys window | grep -m1 -i "mCurrentRotation\|mRotation" || true
 tap_text "Afinador" && shot 08-afinador-paisagem 3
 tap_text "Acordes" && shot 09-acordes-paisagem
 tap_text "Metrônomo" && shot 10-metronomo-paisagem
+tap_text "Estúdio" && shot 10b-estudio-paisagem
 alive "girar a tela"
 adb shell wm user-rotation lock 0 || adb shell settings put system user_rotation 0
 

@@ -479,6 +479,19 @@ class PracticeEngine(context: Context) {
         rebuild()
     }
 
+    /** Arquivos para levar ao Estúdio: stems audíveis (modo stems) ou a música completa. */
+    fun filesForStudio(): List<Pair<String, File>> {
+        val song = current ?: return emptyList()
+        if (useStems && song.hasStems) {
+            val list = StemKind.entries.mapNotNull { kind ->
+                val f = song.stemFiles[kind.key] ?: return@mapNotNull null
+                if (!isAudible(kind)) null else kind.title to File(store.stemsFolder(song), f)
+            }
+            if (list.isNotEmpty()) return list
+        }
+        return listOf(song.title to store.songFile(song))
+    }
+
     /** Aba saiu da tela / app em segundo plano. */
     fun deactivate() = pause()
 

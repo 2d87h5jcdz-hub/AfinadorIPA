@@ -11,7 +11,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.ByteOrder
 
-/** Decodifica MP3/M4A/AAC/WAV/OGG/FLAC (o que o Android souber) para PCM 44,1 kHz estéreo. */
+/** Decodifica MP3/M4A/AAC/WAV/OGG/FLAC (o que o Android souber) para PCM estéreo (44,1 ou 48 kHz). */
 object AudioDecoder {
 
     class Info(val sampleRate: Int, val channels: Int, val durationUs: Long)
@@ -26,13 +26,14 @@ object AudioDecoder {
         dest: File,
         progress: (Double) -> Unit = {},
         cancelled: () -> Boolean = { false },
+        targetRate: Int = PcmFile.SAMPLE_RATE,
     ): Long {
         val tmp = File(dest.parentFile, dest.name + ".part")
         tmp.parentFile?.mkdirs()
         PcmWriter(tmp).use { w ->
             var resampler: Resampler? = null
             decode(context, uri, progress, cancelled,
-                onFormat = { info -> resampler = Resampler(info.sampleRate, PcmFile.SAMPLE_RATE) },
+                onFormat = { info -> resampler = Resampler(info.sampleRate, targetRate) },
                 sink = { l, r, n -> resampler!!.process(l, r, n) { ol, or, k -> w.write(ol, or, k) } },
             )
             resampler?.finish { ol, or, k -> w.write(ol, or, k) }

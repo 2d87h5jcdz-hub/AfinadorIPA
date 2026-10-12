@@ -180,4 +180,41 @@ object PIcons {
 
     val plus = icon("mais") { stroke(2.2f) { moveTo(12f, 5f); lineTo(12f, 19f); moveTo(5f, 12f); lineTo(19f, 12f) } }
     val minus = icon("menos") { stroke(2.2f) { moveTo(5f, 12f); lineTo(19f, 12f) } }
+
+    val record = icon("gravar") { fill { circle(12f, 12f, 7f) } }
+    val toStart = icon("inicio") {
+        fill { moveTo(18f, 5.5f); lineTo(18f, 18.5f); lineTo(9f, 12f); close() }
+        stroke(2.2f) { moveTo(6.5f, 5.5f); lineTo(6.5f, 18.5f) }
+    }
+    val toEnd = icon("fim-da-faixa") {
+        stroke(2f) { moveTo(4f, 12f); lineTo(15f, 12f); moveTo(11f, 8f); lineTo(15f, 12f); lineTo(11f, 16f); moveTo(19f, 6f); lineTo(19f, 18f) }
+    }
+    val zoomIn = icon("zoom-mais") {
+        stroke(2f) { circle(10.5f, 10.5f, 6f); moveTo(15f, 15f); lineTo(20f, 20f); moveTo(8f, 10.5f); lineTo(13f, 10.5f); moveTo(10.5f, 8f); lineTo(10.5f, 13f) }
+    }
+    val zoomOut = icon("zoom-menos") {
+        stroke(2f) { circle(10.5f, 10.5f, 6f); moveTo(15f, 15f); lineTo(20f, 20f); moveTo(8f, 10.5f); lineTo(13f, 10.5f) }
+    }
+    val share = icon("exportar") {
+        stroke(2f) {
+            moveTo(12f, 14f); lineTo(12f, 3.5f); moveTo(8f, 7.5f); lineTo(12f, 3.5f); lineTo(16f, 7.5f)
+            moveTo(8.5f, 10f); lineTo(5.5f, 10f); lineTo(5.5f, 20f); lineTo(18.5f, 20f); lineTo(18.5f, 10f); lineTo(15.5f, 10f)
+        }
+    }
+    val pencil = icon("editar") {
+        stroke(1.8f) { moveTo(5f, 19f); lineTo(6f, 15f); lineTo(16f, 5f); lineTo(19f, 8f); lineTo(9f, 18f); close(); moveTo(14f, 7f); lineTo(17f, 10f) }
+    }
+    val sliders = icon("ajustes") {
+        stroke(2f) {
+            moveTo(4f, 7f); lineTo(20f, 7f); moveTo(4f, 12f); lineTo(20f, 12f); moveTo(4f, 17f); lineTo(20f, 17f)
+        }
+        fill { circle(9f, 7f, 2.2f); circle(15f, 12f, 2.2f); circle(8f, 17f, 2.2f) }
+    }
+    val headphones = icon("fone") {
+        stroke(2f) { moveTo(4.5f, 15f); lineTo(4.5f, 12f); curveTo(4.5f, 3f, 19.5f, 3f, 19.5f, 12f); lineTo(19.5f, 15f) }
+        fill {
+            moveTo(3.5f, 13.5f); lineTo(7.5f, 13.5f); lineTo(7.5f, 20f); lineTo(3.5f, 20f); close()
+            moveTo(16.5f, 13.5f); lineTo(20.5f, 13.5f); lineTo(20.5f, 20f); lineTo(16.5f, 20f); close()
+        }
+    }
 }

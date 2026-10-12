@@ -45,7 +45,8 @@ import com.pestana.estudio.metronome.Metronome
 import com.pestana.estudio.metronome.MetronomeScreen
 import com.pestana.estudio.practice.PracticeEngine
 import com.pestana.estudio.practice.PracticeScreen
-import com.pestana.estudio.soon.StudioSoonScreen
+import com.pestana.estudio.studio.StudioEngine
+import com.pestana.estudio.studio.StudioScreen
 import com.pestana.estudio.tuner.TunerEngine
 import com.pestana.estudio.tuner.TunerScreen
 import com.pestana.estudio.ui.KeepScreenOn
@@ -69,6 +70,7 @@ fun PestanaApp() {
     val tuner = remember { TunerEngine(context) }
     val metronome = remember { Metronome(context) }
     val practice = remember { PracticeEngine(context) }
+    val studio = remember { StudioEngine(context) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
 
     // App em segundo plano: o metrônomo para (não fica tocando escondido).
@@ -83,6 +85,7 @@ fun PestanaApp() {
             metronome.release()
             tuner.release()
             practice.release()
+            studio.release()
         }
     }
 
@@ -98,7 +101,10 @@ fun PestanaApp() {
         }
     }
 
-    KeepScreenOn(tuner.running || metronome.playing || practice.isPlaying || practice.separating)
+    KeepScreenOn(
+        tuner.running || metronome.playing || practice.isPlaying || practice.separating ||
+            studio.transport != com.pestana.estudio.studio.Transport.STOPPED,
+    )
 
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val selectTab: (Int) -> Unit = { i ->
@@ -167,8 +173,11 @@ fun PestanaApp() {
                     0 -> TunerScreen(tuner)
                     1 -> ChordsScreen(tuner.a4)
                     2 -> MetronomeScreen(metronome)
-                    3 -> StudioSoonScreen()
-                    else -> PracticeScreen(practice)
+                    3 -> StudioScreen(studio)
+                    else -> PracticeScreen(practice, studio) {
+                        if (metronome.playing) metronome.stop()
+                        tab = 3
+                    }
                 }
             }
         }

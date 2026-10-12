@@ -24,11 +24,24 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = ciBuildNumber
-        versionName = "0.2.0"
+        versionName = "0.3.0"
 
         // ONNX Runtime traz bibliotecas nativas: só as arquiteturas que importam (celulares + emulador).
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DANDROID_STL=c++_shared")
+            }
+        }
+    }
+
+    // Motor do Estúdio em C++ (Oboe + efeitos + amp NAM compartilhado com o iOS).
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
@@ -64,6 +77,7 @@ android {
 
     buildFeatures {
         compose = true
+        prefab = true
     }
 
     packaging {
@@ -89,6 +103,8 @@ dependencies {
     // Treino: Sonic (tom/velocidade) do Media3 e a IA de separação no ONNX Runtime
     implementation("androidx.media3:media3-common:1.5.1")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
+    // Estúdio: áudio de baixa latência (AAudio/OpenSL) em C++
+    implementation("com.google.oboe:oboe:1.9.3")
 
     testImplementation("junit:junit:4.13.2")
 }

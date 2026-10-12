@@ -11,10 +11,11 @@ import java.nio.ShortBuffer
 import java.nio.channels.FileChannel
 
 /**
- * Áudio já decodificado em disco: PCM 16 bits, estéreo intercalado, 44,1 kHz, sem cabeçalho.
+ * Áudio já decodificado em disco: PCM 16 bits, estéreo intercalado, sem cabeçalho
+ * (44,1 kHz no Treino, 48 kHz no Estúdio).
  * Lido por mapeamento de memória (acesso aleatório instantâneo para seek e loop A-B).
  */
-class PcmFile(val file: File) : Closeable {
+class PcmFile(val file: File, val sampleRate: Int = SAMPLE_RATE) : Closeable {
     companion object {
         const val SAMPLE_RATE = 44_100
         const val BYTES_PER_FRAME = 4
@@ -25,7 +26,7 @@ class PcmFile(val file: File) : Closeable {
         .order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
 
     val frames: Long = raf.length() / BYTES_PER_FRAME
-    val seconds: Double get() = frames.toDouble() / SAMPLE_RATE
+    val seconds: Double get() = frames.toDouble() / sampleRate
 
     /** Lê [count] quadros a partir de [start]; o que passar do fim vira silêncio. */
     fun read(start: Long, count: Int, left: FloatArray, right: FloatArray, lOff: Int = 0) {

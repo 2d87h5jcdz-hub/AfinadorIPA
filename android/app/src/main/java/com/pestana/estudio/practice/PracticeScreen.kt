@@ -44,6 +44,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,15 +66,17 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.pestana.estudio.studio.StudioEngine
 import com.pestana.estudio.ui.PIcons
 import com.pestana.estudio.ui.Palette
 import com.pestana.estudio.ui.Type
 import com.pestana.estudio.ui.panel
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @Composable
-fun PracticeScreen(engine: PracticeEngine) {
+fun PracticeScreen(engine: PracticeEngine, studio: StudioEngine, openStudio: () -> Unit) {
     // Sai da aba ou o app vai para segundo plano: pausa.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -91,7 +94,7 @@ fun PracticeScreen(engine: PracticeEngine) {
     Box(Modifier.fillMaxSize().background(Palette.bg)) {
         if (engine.current != null) {
             BackHandler { engine.close() }
-            PlayerScreen(engine)
+            PlayerScreen(engine, studio, openStudio)
         } else {
             LibraryScreen(engine) { picker.launch(arrayOf("audio/*")) }
         }
@@ -333,7 +336,7 @@ private fun subtitle(song: PracticeSong): String {
 // MARK: player
 
 @Composable
-private fun PlayerScreen(engine: PracticeEngine) {
+private fun PlayerScreen(engine: PracticeEngine, studio: StudioEngine, openStudio: () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val landscape = maxWidth > maxHeight
         if (landscape) {
@@ -356,6 +359,7 @@ private fun PlayerScreen(engine: PracticeEngine) {
                     PitchCard(engine)
                     SpeedCard(engine)
                     StemsCard(engine)
+                    StudioCard(engine, studio, openStudio)
                 }
             }
         } else {
@@ -369,8 +373,46 @@ private fun PlayerScreen(engine: PracticeEngine) {
                 PitchCard(engine)
                 SpeedCard(engine)
                 StemsCard(engine)
+                StudioCard(engine, studio, openStudio)
             }
         }
+    }
+}
+
+@Composable
+private fun StudioCard(engine: PracticeEngine, studio: StudioEngine, openStudio: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var sending by remember { mutableStateOf(false) }
+    val items = engine.filesForStudio()
+    Card {
+        SectionTitle("Gravar por cima")
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .panel(radius = 12.dp, fill = Palette.panel, stroke = Palette.brass, strokeWidth = 1.5.dp)
+                .clickable(enabled = !sending && engine.busy == null) {
+                    val song = engine.current ?: return@clickable
+                    engine.pause()
+                    sending = true
+                    scope.launch {
+                        studio.newProject(song.title)
+                        for ((name, file) in items) studio.importAudio(android.net.Uri.fromFile(file), name)
+                        sending = false
+                        openStudio()
+                    }
+                }
+                .padding(vertical = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (sending) CircularProgressIndicator(color = Palette.brass, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+            else Icon(PIcons.waveform, null, tint = Palette.brass, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            Text(if (sending) "Preparando projeto…" else "Usar como base no Estúdio", style = Type.body(16.sp, FontWeight.SemiBold), color = Palette.brass)
+        }
+        var caption = "Cria um projeto no Estúdio com: " + items.joinToString(", ") { it.first } + "."
+        if (engine.semitones != 0 || engine.speed != 1.0) caption += " Tom e velocidade do Treino não vão junto (os arquivos vão no original)."
+        Text(caption, style = Type.body(12.sp), color = Palette.muted)
     }
 }
 
