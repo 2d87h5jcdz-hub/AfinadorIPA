@@ -114,7 +114,9 @@ class StudioEngine(context: Context) {
     fun activate() {
         val n = native ?: run { lastError = "O motor de áudio do Estúdio não carregou neste aparelho."; return }
         active = true
-        n.open(hasMicPermission())?.let { if (hasMicPermission()) lastError = "Áudio: $it" }
+        // Microfone só com uma música aberta (na lista de músicas basta a saída).
+        val withInput = hasMicPermission() && project != null
+        n.open(withInput)?.let { if (withInput) lastError = "Áudio: $it" }
         n.setInputGain(inputGainDb)
         n.setMonitor(monitorEnabled, monitorEffects.toJson(ampPath(monitorEffects)).toString())
         project?.let { pushSong(it); n.setClick(it.bpm, it.beatsPerBar, clickEnabled) }
@@ -134,7 +136,7 @@ class StudioEngine(context: Context) {
 
     /** Microfone acabou de ser liberado: reabre em duplex. */
     fun micGranted() {
-        if (active) native?.open(true)
+        if (active && project != null) native?.open(true)
         updateRoute()
     }
 
@@ -177,6 +179,7 @@ class StudioEngine(context: Context) {
         armedTrackId = null
         pushSong(p)
         native?.setClick(p.bpm, p.beatsPerBar, clickEnabled)
+        if (active) native?.open(hasMicPermission())
         scope.launch(Dispatchers.IO) { p.tracks.flatMap { it.clips }.forEach { Waveforms.compute(store.file(p.id, it.fileName)) } }
     }
 
@@ -184,6 +187,8 @@ class StudioEngine(context: Context) {
         stopForSwitch()
         project = null
         native?.setSong("""{"tracks":[]}""")
+        if (active) native?.open(false)
+        inputLevel = 0f
     }
 
     fun rename(id: String, name: String) {

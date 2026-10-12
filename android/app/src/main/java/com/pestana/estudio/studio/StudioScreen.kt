@@ -138,7 +138,7 @@ fun StudioScreen(studio: StudioEngine) {
 private fun ProjectList(studio: StudioEngine) {
     var renaming by remember { mutableStateOf<StudioProject?>(null) }
     var deleting by remember { mutableStateOf<StudioProject?>(null) }
-    val fmt = remember { SimpleDateFormat("d MMM yyyy, HH:mm", Locale("pt", "BR")) }
+    val fmt = remember { SimpleDateFormat("d MMM yyyy, HH:mm", Locale.forLanguageTag("pt-BR")) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),

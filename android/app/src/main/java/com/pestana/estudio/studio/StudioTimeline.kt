@@ -359,8 +359,8 @@ private fun Lane(
             )
         }
         // Gravação ao vivo
-        if (recording && recStart != null) {
-            val x0 = (recStart * pps).toFloat()
+        if (recording) {
+            val x0 = ((recStart ?: 0.0) * pps).toFloat()
             val x1 = (studio.position * pps).toFloat()
             drawRoundRect(
                 Palette.off.copy(alpha = 0.35f), topLeft = Offset(x0, 6.dp.toPx()),
