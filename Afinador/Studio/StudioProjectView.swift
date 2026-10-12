@@ -20,17 +20,51 @@ struct StudioProjectView: View {
     @ObservedObject var studio: StudioEngine
     @State private var effectsTarget: StudioEffectsTarget?
     @State private var localError: String?
+    @Environment(\.verticalSizeClass) private var vSize
 
     var body: some View {
+        layout
+        .sheet(item: $effectsTarget) { target in
+            effectsSheet(for: target)
+        }
+    }
+
+    @ViewBuilder
+    private var layout: some View {
+        if vSize == .compact {
+            landscapeLayout
+        } else {
+            portraitLayout
+        }
+    }
+
+    @ViewBuilder
+    private var errorBanner: some View {
+        if let message = localError {
+            StudioErrorBanner(message: message) { localError = nil }
+        }
+    }
+
+    private var header: some View {
+        StudioProjectHeader(studio: studio, onError: { localError = $0 })
+    }
+
+    private var inputPanel: some View {
+        StudioInputPanel(studio: studio, onEditEffects: { effectsTarget = .monitor })
+    }
+
+    private var timeline: some View {
+        StudioTimelineView(studio: studio, onError: { localError = $0 })
+    }
+
+    private var portraitLayout: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 14) {
-                    if let message = localError {
-                        StudioErrorBanner(message: message) { localError = nil }
-                    }
-                    StudioProjectHeader(studio: studio, onError: { localError = $0 })
-                    StudioInputPanel(studio: studio, onEditEffects: { effectsTarget = .monitor })
-                    StudioTimelineView(studio: studio, onError: { localError = $0 })
+                    errorBanner
+                    header
+                    inputPanel
+                    timeline
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
@@ -38,8 +72,34 @@ struct StudioProjectView: View {
             }
             StudioTransportBar(studio: studio)
         }
-        .sheet(item: $effectsTarget) { target in
-            effectsSheet(for: target)
+    }
+
+    /// Horizontal: à esquerda música, entrada e transporte; à direita a linha do tempo com mais espaço.
+    private var landscapeLayout: some View {
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        errorBanner
+                        header
+                        inputPanel
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .padding(.bottom, 12)
+                }
+                StudioTransportBar(studio: studio)
+            }
+            .frame(width: 330)
+            Rectangle()
+                .fill(Color.line)
+                .frame(width: 1)
+            ScrollView {
+                timeline
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .padding(.bottom, 12)
+            }
         }
     }
 

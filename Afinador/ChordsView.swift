@@ -6,6 +6,10 @@ struct ChordsView: View {
     @AppStorage("chordQuality") private var qualityId = "maj"
     @State private var voicingIndex = 0
     @State private var player = ChordPlayer()
+    @Environment(\.verticalSizeClass) private var vSize
+
+    /// iPhone deitado: altura compacta.
+    private var isLandscape: Bool { vSize == .compact }
 
     private var quality: ChordQuality {
         ChordQuality.all.first { $0.id == qualityId } ?? ChordQuality.all[0]
@@ -20,21 +24,54 @@ struct ChordsView: View {
     var body: some View {
         ZStack {
             Color.bg.ignoresSafeArea()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Acordes")
-                        .font(.system(size: 24, weight: .heavy, design: .serif))
-                    rootGrid
-                    qualityStrip
-                    card
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+            if isLandscape {
+                landscapeLayout
+            } else {
+                portraitLayout
             }
         }
         .foregroundColor(.fg)
         .onChange(of: root) { _ in voicingIndex = 0 }
         .onChange(of: qualityId) { _ in voicingIndex = 0 }
+    }
+
+    private var title: some View {
+        Text("Acordes")
+            .font(.system(size: 24, weight: .heavy, design: .serif))
+    }
+
+    private var portraitLayout: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                title
+                rootGrid
+                qualityStrip
+                card
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+    }
+
+    /// Paisagem: escolha do acorde à esquerda, diagrama à direita (cada coluna rola sozinha).
+    private var landscapeLayout: some View {
+        HStack(alignment: .top, spacing: 16) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    title
+                    rootGrid
+                    qualityStrip
+                }
+                .padding(.vertical, 10)
+            }
+            .frame(maxWidth: .infinity)
+            ScrollView(showsIndicators: false) {
+                card
+                    .padding(.vertical, 10)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 16)
     }
 
     private var rootGrid: some View {
@@ -90,7 +127,7 @@ struct ChordsView: View {
 
             if let v = current {
                 ChordDiagram(voicing: v)
-                    .frame(height: 260)
+                    .frame(height: isLandscape ? 200 : 260)
                     .contentShape(Rectangle())
                     .onTapGesture { strum(v) }
                     .gesture(DragGesture(minimumDistance: 30).onEnded { g in

@@ -256,25 +256,59 @@ private struct PracticePlayerScreen: View {
     let sending: Bool
     let onBack: () -> Void
     let onStudio: () -> Void
+    @Environment(\.verticalSizeClass) private var vSize
 
     var body: some View {
         ScrollView {
+            if vSize == .compact {
+                landscapeLayout
+            } else {
+                portraitLayout
+            }
+        }
+    }
+
+    private var portraitLayout: some View {
+        VStack(spacing: 14) {
+            PracticePlayerHeader(engine: engine, onBack: onBack)
+            playerCard
+            PracticeLoopCard(engine: engine)
+            PracticePitchCard(engine: engine)
+            PracticeSpeedCard(engine: engine)
+            PracticeStemsCard(engine: engine)
+            PracticeStudioCard(engine: engine, sending: sending, onStudio: onStudio)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    /// Paisagem (iPhone deitado): player e loop à esquerda, ajustes à direita.
+    private var landscapeLayout: some View {
+        HStack(alignment: .top, spacing: 14) {
             VStack(spacing: 14) {
                 PracticePlayerHeader(engine: engine, onBack: onBack)
-                VStack(spacing: 14) {
-                    PracticeScrubber(engine: engine)
-                    PracticeTransport(engine: engine)
-                }
-                .practiceCard()
+                playerCard
                 PracticeLoopCard(engine: engine)
+            }
+            .frame(maxWidth: .infinity)
+            VStack(spacing: 14) {
                 PracticePitchCard(engine: engine)
                 PracticeSpeedCard(engine: engine)
                 PracticeStemsCard(engine: engine)
                 PracticeStudioCard(engine: engine, sending: sending, onStudio: onStudio)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private var playerCard: some View {
+        VStack(spacing: 14) {
+            PracticeScrubber(engine: engine)
+            PracticeTransport(engine: engine)
+        }
+        .practiceCard()
     }
 }
 

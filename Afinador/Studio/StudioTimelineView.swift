@@ -11,6 +11,10 @@ struct StudioClipSelection: Equatable {
 final class StudioTimelineScrollBox {
     var offset: CGFloat = 0
     var visibleWidth: CGFloat = 0
+    /// Ponto que fica parado na tela durante o zoom: (tempo, x na tela).
+    var zoomAnchor: (time: Double, screenX: CGFloat)?
+    /// Zoom no começo da pinça (nil fora da pinça).
+    var pinchBase: CGFloat?
 }
 
 struct StudioTimelineOffsetKey: PreferenceKey {
@@ -39,6 +43,8 @@ struct StudioTimelineView: View {
     @State private var isDraggingClip = false
     @State private var showImporter = false
     @State private var importing = false
+    @State private var scrubPreview: Double?
+    @State private var pinching = false
 
     private static let space = "studio-timeline"
     private static let markerID = "studio-timeline-marker"
@@ -116,8 +122,8 @@ struct StudioTimelineView: View {
                 trackCount: tracks.count,
                 pps: pps,
                 follow: $follow,
-                onZoomOut: { setZoom(pps / 1.5) },
-                onZoomIn: { setZoom(pps * 1.5) }
+                onZoomOut: { zoomFromButton(pps / 2) },
+                onZoomIn: { zoomFromButton(pps * 2) }
             )
             timelinePanel
             clipBar
@@ -191,9 +197,7 @@ struct StudioTimelineView: View {
 
     private var rulerCorner: some View {
         HStack {
-            Text("COMPASSO")
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .foregroundColor(.muted)
+            StudioTimelineCornerReadout(studio: studio, previewTime: scrubPreview)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
@@ -241,7 +245,7 @@ struct StudioTimelineView: View {
                     timelineContent
                 }
                 .coordinateSpace(name: Self.space)
-                .scrollDisabled(isDraggingClip)
+                .scrollDisabled(isDraggingClip || pinching)
                 .onPreferenceChange(StudioTimelineOffsetKey.self) { offset in
                     handleScrollOffset(offset)
                 }
@@ -257,7 +261,7 @@ struct StudioTimelineView: View {
                     followPlayhead(position: newValue, proxy: proxy)
                 }
                 .onChange(of: pps) { _ in
-                    reveal(x: playheadX, proxy: proxy, animated: false)
+                    keepZoomAnchor(proxy: proxy)
                 }
                 .onChange(of: follow) { on in
                     if on { reveal(x: playheadX, proxy: proxy, animated: true) }
@@ -278,7 +282,8 @@ struct StudioTimelineView: View {
                 studio: studio,
                 pps: pps,
                 totalHeight: totalHeight,
-                liveLaneIndex: liveLaneIndex
+                liveLaneIndex: liveLaneIndex,
+                previewTime: scrubPreview
             )
             scrollMarker
         }
@@ -288,7 +293,7 @@ struct StudioTimelineView: View {
 
     private func lanesStack(metrics m: StudioTimelineMetrics, width: CGFloat) -> some View {
         VStack(spacing: 0) {
-            StudioTimelineRuler(metrics: m, contentWidth: width, onSeek: { t in seekFromTap(t) })
+            StudioTimelineRuler(metrics: m, contentWidth: width, onScrub: { t, ended in scrub(t, ended: ended) })
                 .equatable()
             ForEach(tracks) { track in
                 lane(track: track, metrics: m, width: width)
@@ -339,10 +344,26 @@ struct StudioTimelineView: View {
         }
     }
 
+    /// Pinça ao vivo: o zoom acompanha os dedos e a cabeça de reprodução (ou o meio da tela) fica parada.
     private var pinchGesture: some Gesture {
         MagnificationGesture()
+            .onChanged { scale in
+                if box.pinchBase == nil {
+                    box.pinchBase = pps
+                    captureZoomAnchor()
+                    pinching = true
+                }
+                let base: CGFloat = box.pinchBase ?? pps
+                let target: CGFloat = base * scale
+                if abs(target / max(pps, 0.001) - 1) > 0.015 {
+                    setZoom(target)
+                }
+            }
             .onEnded { scale in
-                setZoom(pps * scale)
+                let base: CGFloat = box.pinchBase ?? pps
+                setZoom(base * scale)
+                box.pinchBase = nil
+                pinching = false
             }
     }
 
@@ -438,6 +459,41 @@ struct StudioTimelineView: View {
         pps = clamped
     }
 
+    private func zoomFromButton(_ value: CGFloat) {
+        captureZoomAnchor()
+        setZoom(value)
+    }
+
+    /// Guarda o ponto que deve ficar parado na tela: a cabeça, se estiver visível; senão o meio da tela.
+    private func captureZoomAnchor() {
+        let width: CGFloat = max(box.visibleWidth, 1)
+        let left: CGFloat = box.offset
+        let head: CGFloat = playheadX
+        if head >= left && head <= left + width {
+            let p: Double = studio.position.isFinite ? max(studio.position, 0) : 0
+            box.zoomAnchor = (time: p, screenX: head - left)
+        } else {
+            let centerTime: Double = Double((left + width / 2) / max(pps, 0.001))
+            box.zoomAnchor = (time: centerTime, screenX: width / 2)
+        }
+    }
+
+    /// Arrastar na régua: parado, a cabeça segue o dedo; tocando, mostra onde vai cair e pula ao soltar.
+    private func scrub(_ time: Double, ended: Bool) {
+        if selection != nil { selection = nil }
+        guard !isRecordingLike else { return }
+        let t: Double = max(0, time)
+        if isStopped {
+            studio.seek(to: t)
+            scrubPreview = ended ? nil : t
+        } else if ended {
+            scrubPreview = nil
+            studio.seek(to: t)
+        } else {
+            scrubPreview = t
+        }
+    }
+
     private func seekFromTap(_ time: Double) {
         selection = nil
         guard !isRecordingLike else { return }
@@ -515,8 +571,22 @@ struct StudioTimelineView: View {
 
     private func reveal(x: CGFloat, proxy: ScrollViewProxy, animated: Bool) {
         let width: CGFloat = max(box.visibleWidth, visibleWidth)
+        scroll(toOffset: x - width * 0.15, proxy: proxy, animated: animated)
+    }
+
+    /// Depois de mudar o zoom, rola para o ponto guardado continuar no mesmo lugar da tela.
+    private func keepZoomAnchor(proxy: ScrollViewProxy) {
+        guard let anchor = box.zoomAnchor else {
+            reveal(x: playheadX, proxy: proxy, animated: false)
+            return
+        }
+        let x: CGFloat = CGFloat(anchor.time) * pps
+        scroll(toOffset: x - anchor.screenX, proxy: proxy, animated: false)
+    }
+
+    private func scroll(toOffset raw: CGFloat, proxy: ScrollViewProxy, animated: Bool) {
         let maxTarget: CGFloat = max(contentWidth - 2, 0)
-        let target: CGFloat = min(max(x - width * 0.15, 0), maxTarget)
+        let target: CGFloat = min(max(raw, 0), maxTarget)
         scrollTargetX = target
         box.offset = target
         DispatchQueue.main.async {
@@ -663,5 +733,25 @@ struct StudioTimelineClipBar: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Tirar a seleção")
         }
+    }
+}
+
+// MARK: - Canto da régua: posição exata da cabeça (com milissegundos)
+
+@MainActor
+struct StudioTimelineCornerReadout: View {
+    @ObservedObject var studio: StudioEngine
+    let previewTime: Double?
+
+    private var shown: Double { previewTime ?? studio.position }
+
+    var body: some View {
+        Text(StudioUIFormat.preciseTime(shown))
+            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .monospacedDigit()
+            .foregroundColor(previewTime == nil ? .muted : .brass)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .accessibilityLabel("Posição \(StudioUIFormat.spokenTime(shown))")
     }
 }

@@ -14,8 +14,9 @@ enum StudioTimelineLayout {
     /// Tamanho do "passo" da janela de desenho (pontos). A janela cobre a página anterior,
     /// a atual e as duas seguintes, mais a largura visível.
     static let renderPage: CGFloat = 768
-    static let minPPS: CGFloat = 20
-    static let maxPPS: CGFloat = 300
+    /// Zoom: de ~4 pt/s (música inteira na tela) até 2000 pt/s (1 pt = 0,5 ms).
+    static let minPPS: CGFloat = 4
+    static let maxPPS: CGFloat = 2000
     static let defaultPPS: CGFloat = 60
 }
 
@@ -78,7 +79,8 @@ struct StudioTimelineMetrics: Equatable {
 struct StudioTimelineRuler: View, Equatable {
     let metrics: StudioTimelineMetrics
     let contentWidth: CGFloat
-    let onSeek: (Double) -> Void
+    /// Arrastar o dedo na régua: (tempo, terminou?). A rolagem não anda enquanto o dedo está aqui.
+    let onScrub: (Double, Bool) -> Void
 
     nonisolated static func == (lhs: StudioTimelineRuler, rhs: StudioTimelineRuler) -> Bool {
         lhs.metrics == rhs.metrics && lhs.contentWidth == rhs.contentWidth
@@ -95,13 +97,85 @@ struct StudioTimelineRuler: View, Equatable {
             .allowsHitTesting(false)
         }
         .frame(width: contentWidth, height: StudioTimelineLayout.rulerHeight, alignment: .topLeading)
+        .background(Color.fg.opacity(0.03))
         .contentShape(Rectangle())
-        .onTapGesture(coordinateSpace: .local) { location in
-            onSeek(metrics.time(location.x))
-        }
+        .gesture(scrubGesture)
         .accessibilityElement()
         .accessibilityLabel("Régua de compassos")
-        .accessibilityHint("Toque para levar a cabeça de reprodução até ali")
+        .accessibilityHint("Toque ou deslize o dedo para levar a cabeça de reprodução até ali")
+    }
+
+    private var scrubGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+            .onChanged { value in
+                onScrub(metrics.time(value.location.x), false)
+            }
+            .onEnded { value in
+                onScrub(metrics.time(value.location.x), true)
+            }
+    }
+
+    /// Passos "redondos" de tempo para as marcas da régua no zoom alto.
+    private static let timeSteps: [Double] = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10]
+
+    private static func step(minWidth: CGFloat, pps: CGFloat) -> Double {
+        for s in timeSteps where CGFloat(s) * pps >= minWidth {
+            return s
+        }
+        return 10
+    }
+
+    private static func timeLabel(_ t: Double, step: Double) -> String {
+        if step >= 1 {
+            let whole: Int = Int(t.rounded())
+            return String(format: "%d:%02d", whole / 60, whole % 60)
+        }
+        let decimals: Int = step >= 0.1 ? 1 : (step >= 0.01 ? 2 : 3)
+        return String(format: "%.\(decimals)fs", t)
+    }
+
+    /// No zoom alto, marcas de tempo (segundos / décimos / milissegundos) além dos compassos.
+    private static func drawTimeTicks(in context: inout GraphicsContext, size: CGSize, metrics: StudioTimelineMetrics) {
+        let pps: CGFloat = metrics.pps
+        guard pps >= 120 else { return }
+        let height: CGFloat = size.height
+        let startTime: Double = Double(metrics.windowStart / pps)
+        let endTime: Double = Double(metrics.windowEnd / pps)
+
+        let minor: Double = step(minWidth: 10, pps: pps)
+        var ticks = Path()
+        var k: Int = Int((startTime / minor).rounded(.down))
+        let lastMinor: Int = Int((endTime / minor).rounded(.up))
+        while k <= lastMinor {
+            let x: CGFloat = metrics.x(Double(k) * minor) - metrics.windowStart
+            ticks.addRect(CGRect(x: x, y: height - 4, width: 1, height: 4))
+            k += 1
+        }
+        context.fill(ticks, with: .color(Color.muted.opacity(0.35)))
+
+        let major: Double = step(minWidth: 64, pps: pps)
+        let every: Int = metrics.barLabelEvery
+        let bar: Double = metrics.barLength
+        var j: Int = Int((startTime / major).rounded(.down))
+        let lastMajor: Int = Int((endTime / major).rounded(.up))
+        var marks = Path()
+        while j <= lastMajor {
+            let t: Double = Double(j) * major
+            let x: CGFloat = metrics.x(t) - metrics.windowStart
+            j += 1
+            marks.addRect(CGRect(x: x, y: height - 8, width: 1, height: 8))
+            // Não escreve em cima do número do compasso.
+            if bar > 0.0001 {
+                let barIndex: Int = Int((t / bar).rounded(.down))
+                let barX: CGFloat = metrics.x(Double(barIndex) * bar) - metrics.windowStart
+                if barIndex % every == 0 && x - barX < 26 { continue }
+            }
+            let label = Text(timeLabel(t, step: major))
+                .font(.system(size: 8, design: .monospaced))
+                .foregroundColor(Color.muted.opacity(0.85))
+            context.draw(label, at: CGPoint(x: x + 2, y: 14), anchor: .topLeading)
+        }
+        context.fill(marks, with: .color(Color.muted.opacity(0.6)))
     }
 
     private static func draw(in context: inout GraphicsContext, size: CGSize, metrics: StudioTimelineMetrics) {
@@ -137,6 +211,7 @@ struct StudioTimelineRuler: View, Equatable {
         }
         context.fill(majorTicks, with: .color(Color.muted.opacity(0.8)))
         context.fill(minorTicks, with: .color(Color.muted.opacity(0.45)))
+        drawTimeTicks(in: &context, size: size, metrics: metrics)
     }
 }
 
@@ -196,6 +271,8 @@ struct StudioTimelinePlayhead: View {
     let totalHeight: CGFloat
     /// Faixa (índice visual) onde a gravação está entrando; nil fora da gravação.
     let liveLaneIndex: Int?
+    /// Enquanto o dedo arrasta na régua com a música tocando: onde a cabeça vai parar ao soltar.
+    var previewTime: Double? = nil
 
     private var isRecording: Bool { studio.transport == .recording }
 
@@ -207,6 +284,7 @@ struct StudioTimelinePlayhead: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             liveClip
+            previewLine
             Rectangle()
                 .fill(isRecording ? Color.off : Color.fg)
                 .frame(width: 2, height: max(totalHeight, 1))
@@ -215,6 +293,16 @@ struct StudioTimelinePlayhead: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var previewLine: some View {
+        if let t = previewTime, t.isFinite {
+            Rectangle()
+                .fill(Color.brass)
+                .frame(width: 2, height: max(totalHeight, 1))
+                .offset(x: CGFloat(max(t, 0)) * pps - 1)
+        }
     }
 
     private var headMarker: some View {

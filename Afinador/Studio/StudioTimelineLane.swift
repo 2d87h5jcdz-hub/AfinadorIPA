@@ -243,9 +243,10 @@ struct StudioTimelineClipView: View, Equatable {
 
     /// Picos pedidos ao motor: potência de 2 (~1 pico a cada 3 pt) para não buscar de novo a cada passo de zoom.
     private var bucketCount: Int {
-        let wanted: Double = Double(clipWidth) / 3.0
+        // Não adianta pedir mais picos que o cache tem (200 por segundo).
+        let wanted: Double = min(Double(clipWidth) / 3.0, max(clip.duration, 0) * 200.0)
         var n: Int = 32
-        while Double(n) < wanted && n < 8192 {
+        while Double(n) < wanted && n < 65536 {
             n *= 2
         }
         return n

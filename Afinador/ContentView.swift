@@ -13,27 +13,65 @@ extension Color {
 
 struct TunerView: View {
     @ObservedObject var tuner: TunerEngine
+    @Environment(\.verticalSizeClass) private var vSize
 
     private var inTune: Bool { tuner.frequency != nil && abs(tuner.cents) <= 5 }
+    /// iPhone deitado: altura compacta.
+    private var isLandscape: Bool { vSize == .compact }
 
     var body: some View {
         ZStack {
             Color.bg.ignoresSafeArea()
-            VStack(spacing: 18) {
-                header
-                dial
-                modeRow
-                strings
-                Spacer(minLength: 0)
-                settings
+            if isLandscape {
+                landscapeLayout
+            } else {
+                portraitLayout
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
         }
         .foregroundColor(.fg)
         .onAppear { tuner.start() }
         .onDisappear { tuner.stop() }
     }
+
+    private var portraitLayout: some View {
+        VStack(spacing: 18) {
+            header
+            dial
+            modeRow
+            strings
+            Spacer(minLength: 0)
+            settings
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    /// Paisagem: mostrador à esquerda, controles à direita (com rolagem se faltar altura).
+    private var landscapeLayout: some View {
+        HStack(alignment: .top, spacing: 16) {
+            ScrollView(showsIndicators: false) {
+                dial
+            }
+            .frame(maxWidth: .infinity)
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 14) {
+                    header
+                    modeRow
+                    strings
+                    settings
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    // medidas do mostrador (menores na paisagem para caber na altura)
+    private var gaugeHeight: CGFloat { isLandscape ? 110 : 170 }
+    private var noteFontSize: CGFloat { isLandscape ? 64 : 92 }
+    private var octaveFontSize: CGFloat { isLandscape ? 22 : 30 }
+    private var dialVerticalPadding: CGFloat { isLandscape ? 10 : 18 }
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
@@ -49,20 +87,20 @@ struct TunerView: View {
     private var dial: some View {
         VStack(spacing: 4) {
             GaugeView(cents: tuner.frequency == nil ? 0 : tuner.centsPrecise, inTune: inTune)
-                .frame(height: 170)
+                .frame(height: gaugeHeight)
 
             HStack(alignment: .top, spacing: 2) {
                 Text(tuner.targetMidi.map { Note.name($0) } ?? "–")
-                    .font(.system(size: 92, weight: .heavy, design: .serif))
+                    .font(.system(size: noteFontSize, weight: .heavy, design: .serif))
                 if let m = tuner.targetMidi {
                     Text("\(Note.octave(m))")
-                        .font(.system(size: 30, weight: .semibold, design: .serif))
+                        .font(.system(size: octaveFontSize, weight: .semibold, design: .serif))
                         .foregroundColor(.muted)
-                        .padding(.top, 12)
+                        .padding(.top, isLandscape ? 8 : 12)
                 }
             }
             .foregroundColor(inTune ? .ok : .fg)
-            .padding(.top, -30)
+            .padding(.top, isLandscape ? -18 : -30)
 
             HStack(spacing: 22) {
                 readout(tuner.frequency.map { String(format: "%.1f", $0) } ?? "—", "Hz")
@@ -72,14 +110,14 @@ struct TunerView: View {
             Text(hint)
                 .font(.system(size: 15))
                 .foregroundColor(hintColor)
-                .padding(.top, 8)
+                .padding(.top, isLandscape ? 4 : 8)
 
             if tuner.permissionDenied {
                 Text("Libere o microfone em Ajustes › Afinador.")
                     .font(.footnote).foregroundColor(.off).padding(.top, 4)
             }
         }
-        .padding(.vertical, 18)
+        .padding(.vertical, dialVerticalPadding)
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: 22).fill(Color.panel))
@@ -115,6 +153,8 @@ struct TunerView: View {
             Text("segure = ouvir")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
     }
 

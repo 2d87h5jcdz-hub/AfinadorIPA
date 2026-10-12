@@ -150,71 +150,122 @@ final class Metronome: ObservableObject {
 
 struct MetronomeView: View {
     @ObservedObject var metronome: Metronome
+    @Environment(\.verticalSizeClass) private var vSize
+
+    /// iPhone deitado: altura compacta.
+    private var isLandscape: Bool { vSize == .compact }
 
     var body: some View {
         ZStack {
             Color.bg.ignoresSafeArea()
-            VStack(spacing: 22) {
-                HStack {
-                    Text("Metrônomo")
-                        .font(.system(size: 24, weight: .heavy, design: .serif))
-                    Spacer()
-                }
-
-                beatDots
-
-                VStack(spacing: 0) {
-                    Text("\(Int(metronome.bpm))")
-                        .font(.system(size: 110, weight: .heavy, design: .serif))
-                        .monospacedDigit()
-                    Text("BPM · \(metronome.tempoName)")
-                        .font(.system(size: 13, design: .monospaced))
-                        .foregroundColor(.muted)
-                }
-
-                HStack(spacing: 14) {
-                    roundButton("−5") { metronome.bpm = max(30, metronome.bpm - 5) }
-                    roundButton("−1") { metronome.bpm = max(30, metronome.bpm - 1) }
-                    Slider(value: $metronome.bpm, in: 30...250, step: 1)
-                        .tint(Color.brass)
-                    roundButton("+1") { metronome.bpm = min(250, metronome.bpm + 1) }
-                    roundButton("+5") { metronome.bpm = min(250, metronome.bpm + 5) }
-                }
-
-                Picker("Compasso", selection: $metronome.beatsPerBar) {
-                    ForEach(Metronome.signatures, id: \.beats) { s in
-                        Text(s.label).tag(s.beats)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                Spacer(minLength: 0)
-
-                HStack(spacing: 14) {
-                    Button { metronome.tap() } label: {
-                        Text("Tap")
-                            .font(.system(size: 16, weight: .bold))
-                            .frame(width: 96)
-                            .padding(.vertical, 16)
-                            .background(Capsule().fill(Color.panel))
-                            .overlay(Capsule().stroke(Color.line))
-                            .foregroundColor(.fg)
-                    }
-                    Button { metronome.toggle() } label: {
-                        Label(metronome.playing ? "Parar" : "Iniciar",
-                              systemImage: metronome.playing ? "stop.fill" : "play.fill")
-                            .font(.system(size: 17, weight: .bold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Capsule().fill(metronome.playing ? Color.off : Color.brass))
-                            .foregroundColor(.bg)
-                    }
-                }
+            if isLandscape {
+                landscapeLayout
+            } else {
+                portraitLayout
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
         }
         .foregroundColor(.fg)
+    }
+
+    private var portraitLayout: some View {
+        VStack(spacing: 22) {
+            header
+            beatDots
+            bpmDisplay
+            bpmControls
+            signaturePicker
+            Spacer(minLength: 0)
+            actionButtons
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    /// Paisagem: andamento grande à esquerda, controles à direita.
+    private var landscapeLayout: some View {
+        HStack(alignment: .center, spacing: 20) {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 10) {
+                    header
+                    beatDots
+                    bpmDisplay
+                }
+                .padding(.vertical, 8)
+            }
+            .frame(maxWidth: .infinity)
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 18) {
+                    bpmControls
+                    signaturePicker
+                    actionButtons
+                }
+                .padding(.vertical, 8)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var header: some View {
+        HStack {
+            Text("Metrônomo")
+                .font(.system(size: 24, weight: .heavy, design: .serif))
+            Spacer()
+        }
+    }
+
+    private var bpmDisplay: some View {
+        VStack(spacing: 0) {
+            Text("\(Int(metronome.bpm))")
+                .font(.system(size: isLandscape ? 84 : 110, weight: .heavy, design: .serif))
+                .monospacedDigit()
+            Text("BPM · \(metronome.tempoName)")
+                .font(.system(size: 13, design: .monospaced))
+                .foregroundColor(.muted)
+        }
+    }
+
+    private var bpmControls: some View {
+        HStack(spacing: isLandscape ? 8 : 14) {
+            roundButton("−5") { metronome.bpm = max(30, metronome.bpm - 5) }
+            roundButton("−1") { metronome.bpm = max(30, metronome.bpm - 1) }
+            Slider(value: $metronome.bpm, in: 30...250, step: 1)
+                .tint(Color.brass)
+            roundButton("+1") { metronome.bpm = min(250, metronome.bpm + 1) }
+            roundButton("+5") { metronome.bpm = min(250, metronome.bpm + 5) }
+        }
+    }
+
+    private var signaturePicker: some View {
+        Picker("Compasso", selection: $metronome.beatsPerBar) {
+            ForEach(Metronome.signatures, id: \.beats) { s in
+                Text(s.label).tag(s.beats)
+            }
+        }
+        .pickerStyle(.segmented)
+    }
+
+    private var actionButtons: some View {
+        HStack(spacing: 14) {
+            Button { metronome.tap() } label: {
+                Text("Tap")
+                    .font(.system(size: 16, weight: .bold))
+                    .frame(width: 96)
+                    .padding(.vertical, 16)
+                    .background(Capsule().fill(Color.panel))
+                    .overlay(Capsule().stroke(Color.line))
+                    .foregroundColor(.fg)
+            }
+            Button { metronome.toggle() } label: {
+                Label(metronome.playing ? "Parar" : "Iniciar",
+                      systemImage: metronome.playing ? "stop.fill" : "play.fill")
+                    .font(.system(size: 17, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Capsule().fill(metronome.playing ? Color.off : Color.brass))
+                    .foregroundColor(.bg)
+            }
+        }
     }
 
     private var beatDots: some View {

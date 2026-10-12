@@ -52,6 +52,16 @@ enum StudioUIFormat {
         return String(format: "%d:%02d.%d", minutes, seconds, tenths)
     }
 
+    /// 1:05.312 (milissegundos, para posicionar a cabeça com precisão)
+    static func preciseTime(_ t: TimeInterval) -> String {
+        let safe: Double = (t.isFinite && t > 0) ? t : 0
+        let totalMs: Int = Int((safe * 1000).rounded())
+        let minutes: Int = totalMs / 60000
+        let seconds: Int = (totalMs / 1000) % 60
+        let ms: Int = totalMs % 1000
+        return String(format: "%d:%02d.%03d", minutes, seconds, ms)
+    }
+
     /// Para leitores de tela: "1 minuto e 5 segundos".
     static func spokenTime(_ t: TimeInterval) -> String {
         let safe: Double = (t.isFinite && t > 0) ? t : 0
