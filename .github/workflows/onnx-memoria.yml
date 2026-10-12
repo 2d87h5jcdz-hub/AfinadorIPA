@@ -1,0 +1,28 @@
+name: Memória do modelo ONNX (diagnóstico)
+
+on:
+  push:
+    branches: [android]
+    paths:
+      - scripts/onnx_memory_report.py
+      - .github/workflows/onnx-memoria.yml
+  workflow_dispatch:
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install numpy==1.26.4 onnx==1.17.0 onnxruntime==1.20.1
+      - name: Baixar modelo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download demucs-model -p 'HTDemucs-v2.onnx' -D /tmp
+      - name: Relatório
+        run: |
+          python scripts/onnx_memory_report.py /tmp/HTDemucs-v2.onnx 2>&1 | tee report.txt
+          sed -e 's/%/%25/g' report.txt | awk 'BEGIN{ORS="%0A"} {print}' | head -c 60000 > enc.txt
+          echo "::notice title=Relatório::$(cat enc.txt)"
