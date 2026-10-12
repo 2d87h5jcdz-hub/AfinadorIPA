@@ -1,0 +1,60 @@
+name: Modelo Demucs (ONNX, Android)
+
+# Exporta o HTDemucs para ONNX, verifica contra o PyTorch e publica como asset
+# HTDemucs.onnx da release "demucs-model". O app Android baixa esse arquivo na primeira
+# vez que o usuário pede a separação (o APK continua pequeno).
+
+on:
+  push:
+    branches: [android]
+    paths:
+      - scripts/export_demucs_onnx.py
+      - scripts/requirements-demucs-onnx.txt
+      - .github/workflows/demucs-onnx.yml
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Modelo"
+        type: choice
+        options: [htdemucs_6s, htdemucs]
+        default: htdemucs_6s
+
+permissions:
+  contents: write
+
+jobs:
+  onnx:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências (versões fixas, torch CPU)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch==2.4.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r scripts/requirements-demucs-onnx.txt
+          pip install --no-deps "demucs @ git+https://github.com/facebookresearch/demucs@e976d93ecc3865e5757426930257e200846a520a"
+
+      - name: Exportar e verificar
+        run: |
+          set -o pipefail
+          python scripts/export_demucs_onnx.py --model "${{ inputs.model || 'htdemucs_6s' }}" --out build/onnx 2>&1 | tee export.log
+          ls -la build/onnx
+
+      - name: Mostrar resultado
+        if: always()
+        run: |
+          grep -E "^\[(verificação|ok|onnx|modelo)\]|Error|error" export.log | tail -15 | while read -r l; do echo "::notice title=Demucs ONNX::$l"; done
+          tail -30 export.log | sed -e 's/%/%25/g' | awk 'BEGIN{ORS="%0A"} {print}' | sed 's/^/::warning title=Fim do log::/' ; echo
+
+      - name: Publicar na release demucs-model
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload demucs-model build/onnx/HTDemucs.onnx build/onnx/contract-onnx.json --clobber
+          echo "::notice title=Publicado::HTDemucs.onnx em https://github.com/${GITHUB_REPOSITORY}/releases/tag/demucs-model"
