@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,6 +61,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -329,7 +331,7 @@ private fun ModeRow(tuner: TunerEngine) {
             options = listOf("Automático", "Por corda"),
             selected = if (tuner.autoMode) 0 else 1,
             onSelect = { tuner.changeAutoMode(it == 0) },
-            modifier = Modifier.widthIn(max = 240.dp).weight(1f, fill = false),
+            modifier = Modifier.width(230.dp),
         )
         Spacer(Modifier.weight(1f).widthIn(min = 8.dp))
         Text("segure = ouvir", style = Type.mono(11.sp), color = Palette.muted, maxLines = 1)
@@ -373,11 +375,13 @@ private fun Strings(tuner: TunerEngine) {
 @Composable
 private fun SettingsRow(tuner: TunerEngine) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-        Column(Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(
+            Modifier.weight(1f).padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             Text("Afinação", style = Type.body(12.sp), color = Palette.muted)
             TuningMenu(tuner.tuning, tuner::selectTuning)
         }
-        Spacer(Modifier.weight(1f).widthIn(min = 10.dp))
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Lá central (A4)", style = Type.body(12.sp), color = Palette.muted)
             Row(
@@ -405,7 +409,14 @@ private fun TuningMenu(current: Tuning, onSelect: (Tuning) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(current.name, style = Type.body(13.sp, FontWeight.SemiBold), color = Palette.fg, maxLines = 1)
+            Text(
+                current.name,
+                style = Type.body(13.sp, FontWeight.SemiBold),
+                color = Palette.fg,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
             Icon(PIcons.chevronDown, null, tint = Palette.muted, modifier = Modifier.size(14.dp))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {

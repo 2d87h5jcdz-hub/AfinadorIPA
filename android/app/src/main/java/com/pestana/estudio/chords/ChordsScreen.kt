@@ -219,7 +219,7 @@ private fun ChordCard(
             Canvas(
                 Modifier
                     .fillMaxWidth()
-                    .height(if (landscape) 200.dp else 260.dp)
+                    .height(if (landscape) 170.dp else 260.dp)
                     .pointerInput(Unit) {
                         detectTapGestures(onTap = { currentState?.let(strumState) })
                     }

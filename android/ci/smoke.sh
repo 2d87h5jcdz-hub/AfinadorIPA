@@ -44,7 +44,11 @@ PY
     echo "::warning title=Elemento não achado::Texto '$1' não apareceu na tela"
     return 1
   fi
-  adb shell input tap $xy
+  if [ "${2:-}" = long ]; then
+    adb shell input swipe $xy $xy 900
+  else
+    adb shell input tap $xy
+  fi
 }
 
 adb install -r "$APK" || { echo "::error title=Instalação::adb install falhou"; exit 1; }
@@ -64,7 +68,11 @@ adb shell am start -W -n $PKG/.MainActivity
 shot 02-afinador 3
 alive "ligar o microfone"
 
-tap_text "Por corda"; sleep 1
+tap_text "A" long; sleep 1            # segurar a corda = nota de referência
+alive "tocar nota de referência"
+tap_text "Padrão (E A D G B E)" && shot 02b-afinador-afinacoes 1
+tap_text "Drop D (D A D G B E)"; sleep 1
+tap_text "Por corda" && shot 02c-afinador-por-corda 1
 tap_text "Acordes" && shot 03-acordes
 tap_text "F" && shot 04-acordes-pestana
 tap_text "Tocar acorde"; sleep 2

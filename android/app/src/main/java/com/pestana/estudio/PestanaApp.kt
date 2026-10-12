@@ -1,5 +1,16 @@
 package com.pestana.estudio
 
+import android.content.res.Configuration
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -73,23 +84,56 @@ fun PestanaApp() {
 
     KeepScreenOn(tuner.running || metronome.playing)
 
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val selectTab: (Int) -> Unit = { i ->
+        // O metrônomo desta aba não deve vazar nas telas de gravação/treino.
+        if (i >= 3 && metronome.playing) metronome.stop()
+        tab = i
+    }
+
     Scaffold(
         containerColor = Palette.bg,
+        contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
-            Column {
-                HorizontalDivider(color = Palette.line, thickness = 0.5.dp)
-                NavigationBar(containerColor = Palette.bg, tonalElevation = 0.dp) {
+            if (!landscape) {
+                Column {
+                    HorizontalDivider(color = Palette.line, thickness = 0.5.dp)
+                    NavigationBar(containerColor = Palette.bg, tonalElevation = 0.dp) {
+                        tabs.forEachIndexed { i, t ->
+                            NavigationBarItem(
+                                selected = tab == i,
+                                onClick = { selectTab(i) },
+                                icon = { Icon(t.icon, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                                label = { Text(t.label, style = Type.body(11.sp), maxLines = 1) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Palette.brass,
+                                    selectedTextColor = Palette.brass,
+                                    unselectedIconColor = Palette.muted,
+                                    unselectedTextColor = Palette.muted,
+                                    indicatorColor = Palette.panel,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+    ) { padding ->
+        Row(Modifier.fillMaxSize().background(Palette.bg).padding(padding)) {
+            // Deitado: abas numa coluna à esquerda, para sobrar altura para o conteúdo.
+            if (landscape) {
+                NavigationRail(
+                    containerColor = Palette.bg,
+                    windowInsets = WindowInsets(0, 0, 0, 0),
+                ) {
+                    Spacer(Modifier.weight(1f))
                     tabs.forEachIndexed { i, t ->
-                        NavigationBarItem(
+                        NavigationRailItem(
                             selected = tab == i,
-                            onClick = {
-                                // O metrônomo desta aba não deve vazar nas telas de gravação/treino.
-                                if (i >= 3 && metronome.playing) metronome.stop()
-                                tab = i
-                            },
-                            icon = { Icon(t.icon, contentDescription = null, modifier = Modifier.size(24.dp)) },
-                            label = { Text(t.label, style = Type.body(11.sp), maxLines = 1) },
-                            colors = NavigationBarItemDefaults.colors(
+                            onClick = { selectTab(i) },
+                            icon = { Icon(t.icon, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                            label = { Text(t.label, style = Type.body(10.sp), maxLines = 1) },
+                            colors = NavigationRailItemDefaults.colors(
                                 selectedIconColor = Palette.brass,
                                 selectedTextColor = Palette.brass,
                                 unselectedIconColor = Palette.muted,
@@ -98,17 +142,18 @@ fun PestanaApp() {
                             ),
                         )
                     }
+                    Spacer(Modifier.weight(1f))
                 }
+                VerticalDivider(color = Palette.line, thickness = 0.5.dp)
             }
-        },
-    ) { padding ->
-        Box(Modifier.fillMaxSize().background(Palette.bg).padding(padding)) {
-            when (tab) {
-                0 -> TunerScreen(tuner)
-                1 -> ChordsScreen(tuner.a4)
-                2 -> MetronomeScreen(metronome)
-                3 -> StudioSoonScreen()
-                else -> PracticeSoonScreen()
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                when (tab) {
+                    0 -> TunerScreen(tuner)
+                    1 -> ChordsScreen(tuner.a4)
+                    2 -> MetronomeScreen(metronome)
+                    3 -> StudioSoonScreen()
+                    else -> PracticeSoonScreen()
+                }
             }
         }
     }

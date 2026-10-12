@@ -15,6 +15,7 @@ import com.pestana.estudio.audio.AudioOutput
 import com.pestana.estudio.audio.AudioRecordInput
 import com.pestana.estudio.audio.AudioTrackOutput
 import com.pestana.estudio.core.Pitch
+import com.pestana.estudio.core.SlidingWindow
 import com.pestana.estudio.core.ToneRenderer
 import com.pestana.estudio.core.TunerLogic
 import com.pestana.estudio.core.TunerReading
@@ -78,9 +79,7 @@ class TunerEngine(context: Context) {
     private val window = 4096
     // ~47 leituras por segundo: o ponteiro recebe alvos novos com frequência e anda sem trancos.
     private val hop = 1024
-    private val ring = FloatArray(window * 2)
-    private var filled = 0
-    private val frame = FloatArray(window)
+    private val frames = SlidingWindow(window, hop)
     private val scratch = FloatArray(window)
     private var inTuneSinceNanos = -1L
 
@@ -89,7 +88,7 @@ class TunerEngine(context: Context) {
 
     fun start() {
         if (running || !hasPermission()) return
-        filled = 0
+        frames.reset()
         logic.reset()
         val ok = input.start { block, n -> ingest(block, n) }
         micError = !ok
@@ -105,19 +104,9 @@ class TunerEngine(context: Context) {
 
     /** Thread do microfone: acumula amostras e roda o YIN a cada [hop]. */
     private fun ingest(block: FloatArray, n: Int) {
-        var off = 0
-        while (off < n) {
-            val take = minOf(n - off, ring.size - filled)
-            System.arraycopy(block, off, ring, filled, take)
-            filled += take
-            off += take
-            while (filled >= window) {
-                System.arraycopy(ring, 0, frame, 0, window)
-                System.arraycopy(ring, hop, ring, 0, filled - hop)
-                filled -= hop
-                val f = Yin.detect(frame, input.sampleRate.toDouble(), scratch)
-                main.post { handle(f) }
-            }
+        frames.feed(block, n) { frame ->
+            val f = Yin.detect(frame, input.sampleRate.toDouble(), scratch)
+            main.post { handle(f) }
         }
     }
 
