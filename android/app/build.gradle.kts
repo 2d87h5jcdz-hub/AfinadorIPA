@@ -24,7 +24,12 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = ciBuildNumber
-        versionName = "0.1.0"
+        versionName = "0.2.0"
+
+        // ONNX Runtime traz bibliotecas nativas: só as arquiteturas que importam (celulares + emulador).
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     signingConfigs {
@@ -81,6 +86,9 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
+    // Treino: Sonic (tom/velocidade) do Media3 e a IA de separação no ONNX Runtime
+    implementation("androidx.media3:media3-common:1.5.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 
     testImplementation("junit:junit:4.13.2")
 }

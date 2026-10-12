@@ -80,7 +80,7 @@ fun ComingSoonScreen(
                 }
             }
             Text(
-                "Enquanto isso, o afinador, os acordes e o metrônomo já funcionam por completo.",
+                "Enquanto isso, o afinador, os acordes, o metrônomo e o treino já funcionam por completo.",
                 style = Type.body(13.sp),
                 color = Palette.muted,
                 textAlign = TextAlign.Center,
@@ -100,17 +100,5 @@ fun StudioSoonScreen() = ComingSoonScreen(
         "Volume, pan, mudo e solo por faixa",
         "Efeitos de guitarra e amplificador",
         "Exportar a mixagem para compartilhar",
-    ),
-)
-
-@Composable
-fun PracticeSoonScreen() = ComingSoonScreen(
-    title = "Treino",
-    icon = PIcons.practice,
-    tagline = "Estude qualquer música no seu ritmo",
-    features = listOf(
-        "Mudar o tom e a velocidade sem distorcer",
-        "Repetir um trecho (A-B) quantas vezes quiser",
-        "Separar voz, bateria, baixo e outros com IA, no próprio aparelho",
     ),
 )

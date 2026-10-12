@@ -14,7 +14,8 @@ import kotlin.random.Random
  */
 interface AudioRenderer {
     /**
-     * Preenche [out] com [frames] amostras mono em float (−1…1).
+     * Preenche [out] com [frames] quadros em float (−1…1): mono, ou estéreo intercalado
+     * (L R L R…, frames × 2 amostras) quando o stream é estéreo.
      * @param startFrame número absoluto da primeira amostra deste bloco desde o início do stream.
      */
     fun render(out: FloatArray, frames: Int, startFrame: Long)

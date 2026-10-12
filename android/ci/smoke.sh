@@ -17,6 +17,20 @@ alive() {
   fi
 }
 
+# Espera até $2 segundos pelo texto $1 na tela.
+wait_text() {
+  local t=0
+  while [ $t -lt "$2" ]; do
+    adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+    adb pull /sdcard/ui.xml /tmp/ui.xml >/dev/null 2>&1
+    if grep -q "text=\"$1\"" /tmp/ui.xml; then return 0; fi
+    sleep 5; t=$((t + 5))
+  done
+  return 1
+}
+
+scroll_down() { adb shell input swipe 540 1700 540 500 400; sleep 1; }
+
 # Toca no elemento cujo texto é exatamente $1 (o de baixo, se houver vários: barra de abas).
 tap_text() {
   adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
@@ -86,6 +100,45 @@ tap_text "Parar"
 tap_text "Estúdio" && shot 06-estudio
 tap_text "Treino" && shot 07-treino
 
+# --- Treino: importa um áudio pelo "Abrir com" (intent VIEW), toca, muda tom/velocidade e separa com IA
+python3 android/ci/make_wav.py /tmp/teste.wav
+EXT=/sdcard/Android/data/$PKG/files
+adb shell mkdir -p $EXT
+adb push /tmp/teste.wav $EXT/teste.wav
+adb shell am start -a android.intent.action.VIEW -d "file://$EXT/teste.wav" -t audio/wav -n $PKG/.MainActivity
+if wait_text "MÚSICA ORIGINAL" 60; then
+  shot 11-treino-player 2
+  tap_text "Tocar"; sleep 3
+  tap_text "75%"; tap_text "Meio tom acima"; sleep 2
+  shot 12-treino-tocando 1
+  alive "tocar no Treino"
+  tap_text "Pausar"
+  scroll_down; scroll_down
+  if tap_text "Separar instrumentos (IA)"; then
+    sleep 2; tap_text "Baixar e separar"
+    sleep 20; shot 13-treino-separando 1
+    if wait_text "Usar instrumentos separados" 900; then
+      sleep 3; scroll_down; scroll_down
+      tap_text "Karaokê"; sleep 1
+      shot 14-treino-instrumentos 1
+      scroll_down
+      shot 15-treino-instrumentos-2 1
+      echo "::notice title=Separação::Concluída no emulador"
+    else
+      shot 13b-treino-separacao-falhou 1
+      echo "::error title=Separação::Não terminou (ou falhou) no emulador"
+      FAIL=1
+    fi
+  fi
+  alive "separar com IA"
+  adb shell input keyevent KEYCODE_BACK; sleep 1
+  shot 16-treino-biblioteca 1
+else
+  shot 11-treino-import-falhou 1
+  echo "::error title=Treino::A música não abriu após o intent VIEW"
+  FAIL=1
+fi
+
 # Paisagem
 adb shell settings put system accelerometer_rotation 0
 adb shell wm user-rotation lock 1 || adb shell settings put system user_rotation 1
@@ -103,6 +156,9 @@ if grep -q "FATAL EXCEPTION" "$OUT/logcat.txt"; then
   echo "::error title=Crash::$trace"
   FAIL=1
 fi
+# Tempo por segmento da IA (emulador x86_64)
+grep "Demucs: segmento" "$OUT/logcat.txt" | head -3 | while read -r l; do echo "::notice title=IA::${l##*: }"; done
+grep -E "AndroidRuntime|Pestana" "$OUT/logcat.txt" | grep -E " [EF] " | head -5 | while read -r l; do echo "::warning title=Log::$l"; done
 # Erros do áudio do app (para depurar sem aparelho)
 grep -E "AudioTrack|AudioRecord" "$OUT/logcat.txt" | grep -E " E " | head -5 | while read -r l; do echo "::warning title=Áudio::$l"; done
 

@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -42,7 +43,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.pestana.estudio.chords.ChordsScreen
 import com.pestana.estudio.metronome.Metronome
 import com.pestana.estudio.metronome.MetronomeScreen
-import com.pestana.estudio.soon.PracticeSoonScreen
+import com.pestana.estudio.practice.PracticeEngine
+import com.pestana.estudio.practice.PracticeScreen
 import com.pestana.estudio.soon.StudioSoonScreen
 import com.pestana.estudio.tuner.TunerEngine
 import com.pestana.estudio.tuner.TunerScreen
@@ -66,6 +68,7 @@ fun PestanaApp() {
     val context = LocalContext.current
     val tuner = remember { TunerEngine(context) }
     val metronome = remember { Metronome(context) }
+    val practice = remember { PracticeEngine(context) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
 
     // App em segundo plano: o metrônomo para (não fica tocando escondido).
@@ -79,10 +82,23 @@ fun PestanaApp() {
             lifecycleOwner.lifecycle.removeObserver(observer)
             metronome.release()
             tuner.release()
+            practice.release()
         }
     }
 
-    KeepScreenOn(tuner.running || metronome.playing)
+    // Áudio vindo de outro app ("Abrir com"/"Compartilhar"): abre o Treino e importa.
+    val incoming = IncomingAudio.uri.value
+    LaunchedEffect(incoming) {
+        if (incoming != null) {
+            if (metronome.playing) metronome.stop()
+            tab = 4
+            practice.close()
+            practice.importSong(incoming)
+            IncomingAudio.uri.value = null
+        }
+    }
+
+    KeepScreenOn(tuner.running || metronome.playing || practice.isPlaying || practice.separating)
 
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val selectTab: (Int) -> Unit = { i ->
@@ -152,7 +168,7 @@ fun PestanaApp() {
                     1 -> ChordsScreen(tuner.a4)
                     2 -> MetronomeScreen(metronome)
                     3 -> StudioSoonScreen()
-                    else -> PracticeSoonScreen()
+                    else -> PracticeScreen(practice)
                 }
             }
         }

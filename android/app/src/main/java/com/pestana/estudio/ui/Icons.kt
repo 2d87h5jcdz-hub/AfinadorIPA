@@ -114,4 +114,70 @@ object PIcons {
             moveTo(12f, 17f); lineTo(12f, 21f)
         }
     }
+
+    val pause = icon("pausar") {
+        fill {
+            moveTo(6.5f, 5f); lineTo(10f, 5f); lineTo(10f, 19f); lineTo(6.5f, 19f); close()
+            moveTo(14f, 5f); lineTo(17.5f, 5f); lineTo(17.5f, 19f); lineTo(14f, 19f); close()
+        }
+    }
+
+    val importFile = icon("importar") {
+        stroke {
+            moveTo(12f, 3.5f); lineTo(12f, 14.5f)
+            moveTo(7.5f, 10f); lineTo(12f, 14.5f); lineTo(16.5f, 10f)
+            moveTo(4.5f, 15.5f); lineTo(4.5f, 19.5f); lineTo(19.5f, 19.5f); lineTo(19.5f, 15.5f)
+        }
+    }
+
+    val sparkle = icon("ia") {
+        fill {
+            moveTo(10f, 3f); lineTo(11.6f, 8.4f); lineTo(17f, 10f); lineTo(11.6f, 11.6f)
+            lineTo(10f, 17f); lineTo(8.4f, 11.6f); lineTo(3f, 10f); lineTo(8.4f, 8.4f); close()
+            moveTo(18f, 14f); lineTo(18.8f, 16.2f); lineTo(21f, 17f); lineTo(18.8f, 17.8f)
+            lineTo(18f, 20f); lineTo(17.2f, 17.8f); lineTo(15f, 17f); lineTo(17.2f, 16.2f); close()
+        }
+    }
+
+    val note = icon("musica") {
+        stroke { moveTo(10f, 17.5f); lineTo(10f, 4.5f); lineTo(19f, 3f); lineTo(19f, 15.5f) }
+        fill { circle(7.5f, 17.5f, 2.6f); circle(16.5f, 15.5f, 2.6f) }
+    }
+
+    val trash = icon("apagar") {
+        stroke {
+            moveTo(4.5f, 6.5f); lineTo(19.5f, 6.5f)
+            moveTo(9.5f, 6.5f); lineTo(9.5f, 4f); lineTo(14.5f, 4f); lineTo(14.5f, 6.5f)
+            moveTo(6.5f, 6.5f); lineTo(7.5f, 20f); lineTo(16.5f, 20f); lineTo(17.5f, 6.5f)
+        }
+    }
+
+    val back5 = icon("voltar5") {
+        stroke {
+            moveTo(5.5f, 12f); curveTo(5.5f, 7.5f, 9f, 4.5f, 12.5f, 4.5f)
+            curveTo(16.6f, 4.5f, 19.5f, 7.8f, 19.5f, 12f)
+            curveTo(19.5f, 16.2f, 16.6f, 19.5f, 12.5f, 19.5f)
+            moveTo(3f, 9.5f); lineTo(5.5f, 12.5f); lineTo(8.5f, 10f)
+        }
+    }
+
+    val forward5 = icon("avancar5") {
+        stroke {
+            moveTo(18.5f, 12f); curveTo(18.5f, 7.5f, 15f, 4.5f, 11.5f, 4.5f)
+            curveTo(7.4f, 4.5f, 4.5f, 7.8f, 4.5f, 12f)
+            curveTo(4.5f, 16.2f, 7.4f, 19.5f, 11.5f, 19.5f)
+            moveTo(21f, 9.5f); lineTo(18.5f, 12.5f); lineTo(15.5f, 10f)
+        }
+    }
+
+    val loopBack = icon("voltar-a") {
+        stroke {
+            moveTo(9f, 5f); lineTo(5f, 9f); lineTo(9f, 13f)
+            moveTo(5f, 9f); lineTo(14f, 9f); curveTo(17f, 9f, 19f, 11f, 19f, 14f)
+            curveTo(19f, 17f, 17f, 19f, 14f, 19f); lineTo(10f, 19f)
+        }
+    }
+
+    val plus = icon("mais") { stroke(2.2f) { moveTo(12f, 5f); lineTo(12f, 19f); moveTo(5f, 12f); lineTo(19f, 12f) } }
+    val minus = icon("menos") { stroke(2.2f) { moveTo(5f, 12f); lineTo(19f, 12f) } }
 }

@@ -20,6 +20,10 @@ class AudioTrackOutput(
     private val renderer: AudioRenderer,
     private val stopWhenIdle: Boolean,
     private val usage: Int = AudioAttributes.USAGE_MEDIA,
+    /** 1 = mono, 2 = estéreo intercalado (o renderer recebe frames × canais amostras). */
+    private val channels: Int = 1,
+    /** false = buffer folgado (player de músicas: prioriza não engasgar em vez de latência). */
+    private val lowLatency: Boolean = true,
 ) : AudioOutput {
     /** Uma ligação do stream; cada uma tem sua thread e seu AudioTrack. */
     private class Session {
@@ -63,7 +67,8 @@ class AudioTrackOutput(
 
     private fun loop(s: Session) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
-        val minBytes = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
+        val mask = if (channels == 2) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
+        val minBytes = AudioTrack.getMinBufferSize(sampleRate, mask, AudioFormat.ENCODING_PCM_FLOAT)
         val block = 256
         val t = try {
             AudioTrack.Builder()
@@ -77,26 +82,28 @@ class AudioTrackOutput(
                     AudioFormat.Builder()
                         .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                         .setSampleRate(sampleRate)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .setChannelMask(mask)
                         .build(),
                 )
-                .setBufferSizeInBytes(maxOf(minBytes, block * 4 * 2))
+                .setBufferSizeInBytes(maxOf(minBytes, (if (lowLatency) block * 2 else 8192) * 4 * channels))
                 .setTransferMode(AudioTrack.MODE_STREAM)
-                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                .setPerformanceMode(
+                    if (lowLatency) AudioTrack.PERFORMANCE_MODE_LOW_LATENCY else AudioTrack.PERFORMANCE_MODE_NONE,
+                )
                 .build()
         } catch (e: Exception) {
             s.active = false
             return
         }
         s.track = t
-        val buf = FloatArray(block)
+        val buf = FloatArray(block * channels)
         var written = 0L
         var idleFrames = 0L
         try {
             t.play()
             while (s.active) {
                 renderer.render(buf, block, written)
-                val n = t.write(buf, 0, block, AudioTrack.WRITE_BLOCKING)
+                val n = t.write(buf, 0, block * channels, AudioTrack.WRITE_BLOCKING)
                 if (n < 0) break
                 written += block
                 if (stopWhenIdle && renderer.isIdle) {
