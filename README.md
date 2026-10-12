@@ -111,7 +111,7 @@ Toque em **Nova música** e dê um nome. Cada música é um projeto com as suas 
 - Cada linha é uma **faixa**, e os blocos dourados são os trechos gravados, com a forma de onda.
 - **Nova faixa** cria uma faixa vazia, que já fica **armada** (bolinha vermelha cheia). A próxima gravação entra nela.
 - Toque na **bolinha vermelha** de uma faixa para armar ou desarmar. Sem nenhuma armada, cada gravação cria uma faixa nova.
-- **M** deixa a faixa muda e **S** faz solo (só ela toca). Toque no **nome** da faixa para volume, pan, efeitos, renomear e apagar.
+- **M** deixa a faixa muda, **S** faz solo (só ela toca) e **FX** liga/desliga de uma vez todos os efeitos e a afinação da faixa (os ajustes ficam guardados). Toque no **nome** da faixa para volume, pan, efeitos, renomear e apagar.
 - **Importar áudio** traz uma base, uma guia ou um playback do app Arquivos como faixa.
 
 ### 4. Posicionar a cabeça de reprodução
@@ -144,7 +144,28 @@ Toque num trecho para selecioná-lo. Aparecem as opções:
 
 <!-- PRINT: docs/prints/09-estudio-efeitos.png -->
 
-Cada faixa tem seus efeitos: presets prontos (**Violão aço, Violão nylon, Voz, Guitarra limpa, Guitarra drive**) ou ajuste manual de **noise gate, equalizador, compressor, drive, delay e reverb**.
+Cada faixa tem seus efeitos, e os mesmos efeitos funcionam ao vivo em **Ouvir a entrada**:
+
+- **Presets prontos:** Violão aço, Violão nylon, Voz, Guitarra limpa, Guitarra drive, **Crunch, Distorção pesada, Fuzz, Solo, Limpa com chorus, Flanger anos 80, Phaser e Tremolo**.
+- **Ajuste manual:** noise gate, equalizador, compressor, drive (estilos distorção, crunch, funk e fuzz), **modulação** (chorus, flanger, phaser e tremolo), delay e reverb.
+
+#### Afinação automática (voz)
+
+Na tela de efeitos de uma faixa, ligue **Afinação automática**. O app analisa a voz gravada e leva cada nota para o lugar certo de forma **sutil**: mantém o vibrato e a expressão, para não soar como efeito.
+
+- **Tom:** automático (descoberto pela própria voz) ou escolhido à mão, com escala maior, menor ou cromática.
+- **Intensidade:** começa em 80%. Mais baixo soa mais natural; 100% leva cada nota exatamente para o lugar.
+- O processamento roda em segundo plano depois da gravação. A **gravação original não muda**: dá para desligar ou ajustar quando quiser.
+
+#### Amplificador (IA) — Neural Amp Modeler
+
+O app roda modelos **.nam** do [Neural Amp Modeler](https://github.com/sdatkinson/neural-amp-modeler), que imitam amplificadores e pedais reais com IA.
+
+1. Baixe capturas gratuitas em **[tone3000.com](https://www.tone3000.com)**. Prefira as marcadas como **full rig**, que já incluem a caixa do amplificador.
+2. Em **Efeitos › Amplificador (IA) › Modelo › Importar arquivo .nam…**, escolha o arquivo.
+3. Deixe o **Drive em 0** (o amplificador já distorce) e ajuste **Entrada** (ganho) e **Saída** (volume).
+
+Se ouvir estalos tocando ao vivo, use capturas **lite** ou **feather**, que são mais leves para o iPhone. Os modelos ficam em Arquivos › Pestana › Amps.
 
 ### 8. Exportar
 
@@ -209,3 +230,5 @@ No app **Arquivos › No meu iPhone › Pestana**. Dá para copiar e fazer backu
 ## Para desenvolvedores
 
 O .ipa é gerado pelo GitHub Actions (workflow **Gerar IPA**, em macOS) a partir do `project.yml` (XcodeGen). O .ipa sai sem assinatura, e a ferramenta de instalação faz a assinatura. O modelo de separação (Demucs) é convertido para Core ML pelo workflow `demucs-model.yml`.
+
+O amplificador usa o [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore) (MIT), com [Eigen](https://eigen.tuxfamily.org) (MPL2) e [nlohmann/json](https://github.com/nlohmann/json) (MIT), incluídos em `Vendor/` com as licenças. Uma Release nova sai sozinha quando o `main` recebe uma versão nova em `MARKETING_VERSION` (`project.yml`), usando as notas em `docs/release-notes/`.
