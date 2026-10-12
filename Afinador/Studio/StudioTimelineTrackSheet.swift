@@ -46,7 +46,8 @@ struct StudioTimelineTrackSheet: View {
             StudioEffectsSheet(
                 title: track?.name ?? "Faixa",
                 subtitle: "Efeitos desta faixa na reprodução e na exportação.",
-                settings: effectsBinding
+                settings: effectsBinding,
+                extraTop: AnyView(StudioPitchPanel(studio: studio, trackID: trackID))
             )
         }
         .alert("Apagar faixa?", isPresented: $confirmDelete) {

@@ -74,7 +74,8 @@ enum StudioOfflineRenderer {
         var end: TimeInterval = 0
         var hasTail = false
         for track in audible {
-            let chain = StudioTrackChain(trackID: track.id, clips: track.clips, folder: folder)
+            let clips: [StudioClip] = StudioPitchFiles.playbackClips(for: track, folder: folder)
+            let chain = StudioTrackChain(trackID: track.id, clips: clips, folder: folder)
             guard chain.isPlayable else { continue }
             chain.install(in: engine, destination: master, format: renderFormat)
             chain.apply(track, anySolo: anySolo)

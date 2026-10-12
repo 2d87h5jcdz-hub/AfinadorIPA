@@ -113,6 +113,8 @@ final class StudioEngine: ObservableObject {
 
     /// true enquanto exportMix está renderizando.
     @Published private(set) var isExporting = false
+    /// Afinação automática em andamento: faixa → progresso 0…1.
+    @Published private(set) var pitchProgress: [UUID: Double] = [:]
 
     /// Latência que será compensada na próxima gravação (s).
     var latencyCompensation: TimeInterval {
@@ -187,6 +189,11 @@ final class StudioEngine: ObservableObject {
     private var suppressObservation = false
     private var saveTask: Task<Void, Never>?
     private var rebuildTask: Task<Void, Never>?
+    /// Trabalhos de afinação por faixa (chave = o que está sendo gerado, para não repetir).
+    private var pitchTasks: [UUID: (key: String, task: Task<Void, Never>)] = [:]
+    private var pitchRefreshTask: Task<Void, Never>?
+    /// Trabalhos que falharam (sem voz para achar o tom): não repete até mudar algo.
+    private var pitchFailed: Set<String> = []
     private var timerCancellable: AnyCancellable?
     private var engineConfigCancellable: AnyCancellable?
     private var sessionCancellables = Set<AnyCancellable>()
@@ -889,7 +896,8 @@ final class StudioEngine: ObservableObject {
         let folder = StudioStorage.folder(for: project.id)
         var missing: [String] = []
         for track in project.tracks where !track.clips.isEmpty {
-            let chain = StudioTrackChain(trackID: track.id, clips: track.clips, folder: folder)
+            let clips: [StudioClip] = StudioPitchFiles.playbackClips(for: track, folder: folder)
+            let chain = StudioTrackChain(trackID: track.id, clips: clips, folder: folder)
             if chain.missingClips > 0 { missing.append(track.name) }
             guard chain.isPlayable else { continue }
             chain.install(in: engine, destination: destination, format: format)
@@ -1223,6 +1231,7 @@ final class StudioEngine: ObservableObject {
             armedTrackID = nil
             if let new { upsertInList(new) }
             rebuildEngineIfActive()
+            schedulePitchRefresh()
             return
         }
 
@@ -1232,7 +1241,8 @@ final class StudioEngine: ObservableObject {
         }
         let oldIDs = old.tracks.map { $0.id }
         let newIDs = new.tracks.map { $0.id }
-        if Self.playbackLayout(old) != Self.playbackLayout(new) {
+        schedulePitchRefresh()
+        if Self.playbackLayout(old) != Self.playbackLayout(new) || Self.pitchLayout(old) != Self.pitchLayout(new) {
             // Mudou o que toca (faixa com clips entrou/saiu, clip movido/aparado/apagado).
             if transport == .playing { stop() }
             if transport == .stopped { rebuildEngineIfActive() } else { needsRebuild = true }
@@ -1248,6 +1258,97 @@ final class StudioEngine: ObservableObject {
         }
         if old.bpm != new.bpm || old.beatsPerBar != new.beatsPerBar {
             click?.setTempo(bpm: new.bpm, beatsPerBar: new.beatsPerBar)
+        }
+    }
+
+    /// Assinatura da afinação por faixa: se muda, os arquivos tocados mudam (reconstrói o grafo).
+    private static func pitchLayout(_ p: StudioProject) -> [UUID: String] {
+        var map: [UUID: String] = [:]
+        for track in p.tracks where track.pitch.enabled { map[track.id] = track.pitch.signature ?? "" }
+        return map
+    }
+
+    // MARK: - Afinação automática
+
+    /// Agenda uma verificação (com espera curta: o controle de intensidade muda muitas vezes seguidas).
+    private func schedulePitchRefresh() {
+        pitchRefreshTask?.cancel()
+        pitchRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            if Task.isCancelled { return }
+            self?.refreshPitchCorrection()
+        }
+    }
+
+    /// Começa (ou cancela) os trabalhos de afinação conforme as faixas do projeto aberto.
+    private func refreshPitchCorrection() {
+        guard let project else {
+            for (_, job) in pitchTasks { job.task.cancel() }
+            pitchTasks = [:]
+            pitchProgress = [:]
+            return
+        }
+        let folder = StudioStorage.folder(for: project.id)
+        var wanted: Set<UUID> = []
+        for track in project.tracks where track.pitch.enabled && !track.clips.isEmpty {
+            let sources: [String] = Array(Set(track.clips.map(\.fileName))).sorted()
+            let jobKey: String = (track.pitch.signature ?? "detect|\(track.pitch.strength)") + "|" + sources.joined(separator: ",")
+            if track.pitch.signature != nil && StudioPitchFiles.isReady(track: track, folder: folder) {
+                continue    // tudo pronto
+            }
+            if pitchFailed.contains(jobKey) { continue }
+            wanted.insert(track.id)
+            if let running = pitchTasks[track.id], running.key == jobKey { continue }
+            pitchTasks[track.id]?.task.cancel()
+            startPitchJob(trackID: track.id, sources: sources, settings: track.pitch, folder: folder, jobKey: jobKey)
+        }
+        for (id, job) in pitchTasks where !wanted.contains(id) {
+            job.task.cancel()
+            pitchTasks[id] = nil
+            pitchProgress[id] = nil
+        }
+    }
+
+    private func startPitchJob(trackID: UUID, sources: [String], settings: PitchCorrection,
+                               folder: URL, jobKey: String) {
+        pitchProgress[trackID] = 0
+        let task = Task.detached(priority: .userInitiated) { [weak self] in
+            let outcome = StudioPitchJob.run(
+                folder: folder, sources: sources, settings: settings,
+                progress: { value in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.pitchTasks[trackID]?.key == jobKey else { return }
+                        self.pitchProgress[trackID] = value
+                    }
+                },
+                isCancelled: { Task.isCancelled }
+            )
+            if Task.isCancelled { return }
+            await MainActor.run { [weak self] in
+                self?.pitchJobFinished(trackID: trackID, jobKey: jobKey, outcome: outcome)
+            }
+        }
+        pitchTasks[trackID] = (key: jobKey, task: task)
+    }
+
+    private func pitchJobFinished(trackID: UUID, jobKey: String, outcome: StudioPitchJob.Outcome) {
+        guard pitchTasks[trackID]?.key == jobKey else { return }    // já substituído por outro
+        pitchTasks[trackID] = nil
+        pitchProgress[trackID] = nil
+        guard let index = project?.tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        if outcome.noVoice {
+            pitchFailed.insert(jobKey)
+            let name = project?.tracks[index].name ?? "a faixa"
+            lastError = "Não encontrei voz suficiente em “\(name)” para descobrir o tom. Escolha o tom à mão."
+            return
+        }
+        if let key = outcome.detectedKey, project?.tracks[index].pitch.isAuto == true {
+            // Guarda o tom achado (dispara projectDidChange → reconstrói com os arquivos novos).
+            project?.tracks[index].pitch.detectedKey = key
+            project?.tracks[index].pitch.detectedScale = outcome.detectedScale
+        }
+        if outcome.completed {
+            if transport == .stopped { rebuildEngineIfActive() } else { needsRebuild = true }
         }
     }
 

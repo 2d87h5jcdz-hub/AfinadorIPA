@@ -7,6 +7,8 @@ struct StudioEffectsSheet: View {
     let title: String
     let subtitle: String
     @Binding var settings: EffectSettings
+    /// Seção extra logo abaixo dos presets (ex.: afinação automática das faixas).
+    var extraTop: AnyView? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -16,6 +18,9 @@ struct StudioEffectsSheet: View {
                 VStack(alignment: .leading, spacing: 14) {
                     header
                     presetPicker
+                    if let extraTop {
+                        extraTop
+                    }
                     gateSection
                     eqSection
                     compressorSection

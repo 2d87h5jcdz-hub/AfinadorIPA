@@ -116,7 +116,8 @@ struct StudioProjectView: View {
             StudioEffectsSheet(
                 title: trackName(id),
                 subtitle: "Efeitos desta faixa na reprodução e na exportação.",
-                settings: trackEffectsBinding(id)
+                settings: trackEffectsBinding(id),
+                extraTop: AnyView(StudioPitchPanel(studio: studio, trackID: id))
             )
         }
     }
