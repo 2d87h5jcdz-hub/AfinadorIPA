@@ -507,6 +507,20 @@ struct StudioTimelineView: View {
             updateEdgeScroll()
         }
         applyScrub(time, ended: ended)
+        if ended {
+            revealIfOffscreen(time: time)
+        }
+    }
+
+    /// Soltou o dedo com a cabeça fora da tela (ex.: arrastou além da borda): rola até ela.
+    private func revealIfOffscreen(time: Double) {
+        guard let proxy = box.proxy else { return }
+        let x: CGFloat = CGFloat(max(time, 0)) * pps
+        let left: CGFloat = box.offset
+        let width: CGFloat = max(box.visibleWidth, 1)
+        if x < left || x > left + width - 6 {
+            reveal(x: x, proxy: proxy, animated: true)
+        }
     }
 
     private func applyScrub(_ time: Double, ended: Bool) {
@@ -548,11 +562,15 @@ struct StudioTimelineView: View {
         }
         guard box.edgeTimer == nil else { return }
         let view = self
-        box.edgeTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
+        // Timer criado à mão e posto no modo .common: no modo padrão o iOS não dispara timers
+        // enquanto o dedo está na tela (o run loop fica em "tracking"), e a rolagem nunca andava.
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { _ in
             Task { @MainActor in
                 view.edgeTick()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        box.edgeTimer = timer
     }
 
     private func stopEdgeScroll() {
