@@ -248,10 +248,11 @@ private fun ProjectScreen(studio: StudioEngine, onRecord: () -> Unit, askMic: ()
     var renaming by remember { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val landscape = maxWidth > maxHeight
+        val leftWidth = maxWidth * 0.36f
         if (landscape) {
             Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(
-                    Modifier.width(maxWidth * 0.36f).verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                    Modifier.width(leftWidth).verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     TopBar(studio, share)
