@@ -30,6 +30,7 @@ A doação é voluntária e não dá direito a recursos extras nem a suporte. É
 ## Sumário
 
 - [Instalação](#instalação)
+- [Android (em desenvolvimento)](#android-em-desenvolvimento)
 - [Afinador](#afinador)
 - [Acordes](#acordes)
 - [Metrônomo](#metrônomo)
@@ -52,6 +53,22 @@ O app não está na App Store. Ele é distribuído como arquivo **.ipa**, que vo
 4. Com Apple ID gratuito, a assinatura vale **7 dias**. Depois disso é só reinstalar por cima: **suas músicas e gravações não se perdem**.
 
 > Se o app pedir acesso ao microfone, permita. Ele é usado para afinar e gravar. Nada sai do seu iPhone sem você compartilhar.
+
+---
+
+## Android (em desenvolvimento)
+
+Uma versão para Android está sendo feita (pasta [`android/`](android/), Kotlin + Jetpack Compose). Nesta primeira fase já funcionam o **Afinador**, os **Acordes** e o **Metrônomo**; Estúdio e Treino aparecem como "em breve".
+
+No Android não há a limitação de 7 dias do iPhone: o app é um **.apk** comum, instalado uma vez e pronto.
+
+1. Abra a aba [**Actions › Gerar APK (Android)**](../../actions/workflows/android.yml) e entre na execução mais recente com ✅ (é preciso estar logado no GitHub).
+2. No fim da página, em **Artifacts**, baixe **PestanaEstudio-apk** (vem um .zip; dentro está o `PestanaEstudio.apk`).
+3. Passe o .apk para o celular (cabo, Google Drive, WhatsApp para você mesmo…) e toque nele.
+4. Na primeira vez, o Android pede para **permitir a instalação de apps desta fonte** (o navegador ou o gerenciador de arquivos que abriu o .apk). Permita e volte para instalar.
+5. Versões novas instalam **por cima** da anterior, sem perder seus ajustes.
+
+> O Google Play Protect pode avisar que o app é "desconhecido" (ele não vem da Play Store). Toque em **Mais detalhes › Instalar assim mesmo**.
 
 ---
 
