@@ -44,7 +44,7 @@ final class TunerEngine: ObservableObject {
     }
     @Published var manualIndex = 0
 
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private let analysisQueue = DispatchQueue(label: "afinador.analysis")
     private var samples: [Float] = []
     private let window = 4096
@@ -95,14 +95,24 @@ final class TunerEngine: ObservableObject {
         do {
             AudioSession.activate()
 
+            // Motor novo a cada início: o Estúdio pode ter trocado a entrada, a taxa de amostragem
+            // ou o buffer. Um AVAudioEngine antigo guarda o formato velho da entrada e o tap com
+            // esse formato derruba o app ("format mismatch").
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+            engine = AVAudioEngine()
+            toneNode = nil
+
             let input = engine.inputNode
             let format = input.outputFormat(forBus: 0)
+            guard format.sampleRate > 0, format.channelCount > 0 else {
+                running = false
+                return
+            }
             sampleRate = format.sampleRate
-            // O motor pode ter sido parado pelo sistema (troca de rota) com o tap ainda instalado:
-            // instalar de novo sem remover derruba o app.
-            input.removeTap(onBus: 0)
 
-            input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
+            // format: nil = o formato atual do nó, sem chance de divergir do hardware.
+            input.installTap(onBus: 0, bufferSize: 2048, format: nil) { [weak self] buffer, _ in
                 guard let self = self, let ch = buffer.floatChannelData?[0] else { return }
                 let n = Int(buffer.frameLength)
                 let chunk = Array(UnsafeBufferPointer(start: ch, count: n))

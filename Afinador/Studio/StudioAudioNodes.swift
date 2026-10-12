@@ -514,8 +514,10 @@ final class StudioLevelMeters: @unchecked Sendable {
 // MARK: - Fábricas dos blocos de tap (criados fora do MainActor de propósito)
 
 enum StudioTaps {
-    static func inputTap(meters: StudioLevelMeters, recorder: StudioTakeRecorder) -> AVAudioNodeTapBlock {
+    static func inputTap(meters: StudioLevelMeters, recorder: StudioTakeRecorder,
+                         gain: StudioInputGain) -> AVAudioNodeTapBlock {
         return { buffer, when in
+            gain.apply(to: buffer)
             meters.reportInput(StudioLevelMeters.normalizedPeak(of: buffer))
             recorder.process(buffer, when: when)
         }
@@ -526,4 +528,39 @@ enum StudioTaps {
             meters.reportTrack(id, StudioLevelMeters.normalizedPeak(of: buffer))
         }
     }
+}
+
+/// Ganho digital da entrada, lido na thread de áudio (tap). 0 dB = sem alteração.
+final class StudioInputGain: @unchecked Sendable {
+    private let lock = NSLock()
+    private var linear: Float = 1
+
+    func setDecibels(_ db: Float) {
+        lock.lock()
+        linear = powf(10, db / 20)
+        lock.unlock()
+    }
+
+    /// Multiplica as amostras no lugar, limitando a ±1 para não estourar o arquivo gravado.
+    func apply(to buffer: AVAudioPCMBuffer) {
+        lock.lock()
+        let g = linear
+        lock.unlock()
+        guard g != 1, let channels = buffer.floatChannelData else { return }
+        let frames = Int(buffer.frameLength)
+        let count = Int(buffer.format.channelCount)
+        for c in 0..<count {
+            let samples = channels[c]
+            for i in 0..<frames {
+                samples[i] = min(1, max(-1, samples[i] * g))
+            }
+        }
+    }
+}
+
+/// Uma entrada de áudio que o usuário pode escolher no Estúdio.
+struct StudioInputOption: Identifiable, Equatable {
+    let id: String        // uid da porta
+    let name: String      // "Microfone do iPhone", "Microfone do fone", "iRig HD"…
+    let portType: String  // AVAudioSession.Port.rawValue
 }

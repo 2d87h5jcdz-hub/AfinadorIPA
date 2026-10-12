@@ -256,6 +256,7 @@ struct StudioInputPanel: View {
             StudioMeterBar(level: studio.inputLevel, height: 10)
                 .accessibilityLabel("Nível da entrada")
                 .accessibilityValue("\(Int(studio.inputLevel * 100)) por cento")
+            gainRow
             Divider().overlay(Color.line)
             monitorRow
             if studio.monitorEnabled && !studio.isHeadphoneConnected {
@@ -268,20 +269,61 @@ struct StudioInputPanel: View {
 
     private var inputRow: some View {
         HStack(spacing: 8) {
-            Image(systemName: studio.isHeadphoneConnected ? "headphones" : "mic.fill")
+            Image(systemName: "mic.fill")
                 .foregroundColor(.brass)
                 .accessibilityHidden(true)
-            Text(studio.inputName)
-                .font(.system(size: 15, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            inputMenu
             Spacer(minLength: 4)
             Text("ENTRADA")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(.muted)
         }
+    }
+
+    /// Escolha da entrada: microfone do iPhone, do fone ou interface USB.
+    private var inputMenu: some View {
+        Menu {
+            ForEach(studio.availableInputs) { option in
+                Button {
+                    studio.selectInput(option.id)
+                } label: {
+                    if option.id == studio.selectedInputID {
+                        Label(option.name, systemImage: "checkmark")
+                    } else {
+                        Text(option.name)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(studio.inputName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundColor(.fg)
+        }
+        .disabled(studio.transport != .stopped || studio.availableInputs.count < 2)
+        .accessibilityLabel("Entrada de áudio: \(studio.inputName). Toque para trocar.")
+    }
+
+    /// Ganho digital da entrada (0 a +24 dB).
+    private var gainRow: some View {
+        HStack(spacing: 10) {
+            Text("Ganho")
+                .font(.system(size: 13))
+                .foregroundColor(.muted)
+            Slider(value: $studio.inputGainDB, in: 0...24, step: 1)
+                .tint(Color.brass)
+            Text("+\(Int(studio.inputGainDB)) dB")
+                .font(.system(size: 13, design: .monospaced))
+                .foregroundColor(.fg)
+                .frame(width: 58, alignment: .trailing)
+        }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Entrada de áudio: \(studio.inputName)")
+        .accessibilityLabel("Ganho da entrada, mais \(Int(studio.inputGainDB)) decibéis")
     }
 
     private var monitorRow: some View {

@@ -62,6 +62,20 @@ final class StudioEngine: ObservableObject {
     }
     @Published private(set) var inputName: String = "Microfone do iPhone"
     @Published private(set) var isHeadphoneConnected: Bool = false
+    /// Entradas disponíveis agora (microfone do iPhone, microfone do fone, interface USB…).
+    @Published private(set) var availableInputs: [StudioInputOption] = []
+    /// uid da entrada em uso.
+    @Published private(set) var selectedInputID: String?
+    /// Ganho digital da entrada, em dB (0…+24). Vale para o monitoramento, o medidor e a gravação.
+    @Published var inputGainDB: Float = 0 {
+        didSet {
+            let clamped = min(24, max(0, inputGainDB))
+            if clamped != inputGainDB { inputGainDB = clamped; return }
+            inputGain.setDecibels(clamped)
+            inputBoost?.globalGain = clamped
+            UserDefaults.standard.set(clamped, forKey: Keys.inputGain)
+        }
+    }
     @Published private(set) var lastError: String?
 
     /// Maior faixa do projeto (fim da faixa = offset + duração).
@@ -98,6 +112,8 @@ final class StudioEngine: ObservableObject {
     private enum Keys {
         static let click = "studio.clickEnabled"
         static let countIn = "studio.countInBars"
+        static let preferredInputType = "studio.preferredInputType"
+        static let inputGain = "studio.inputGainDB"
     }
 
     private static let feedbackWarning =
@@ -122,6 +138,8 @@ final class StudioEngine: ObservableObject {
 
     private let meters = StudioLevelMeters()
     private let recorder = StudioTakeRecorder()
+    private let inputGain = StudioInputGain()
+    private var inputBoost: AVAudioUnitEQ?
 
     private var isActive = false
     private var micGranted = false
@@ -151,6 +169,10 @@ final class StudioEngine: ObservableObject {
         if defaults.object(forKey: Keys.countIn) != nil {
             countInBars = min(2, max(0, defaults.integer(forKey: Keys.countIn)))
         }
+        // No init os didSet não rodam: aplica o ganho salvo à mão.
+        let savedGain = min(24, max(0, defaults.float(forKey: Keys.inputGain)))
+        inputGainDB = savedGain
+        inputGain.setDecibels(savedGain)
         projects = StudioStorage.loadAll()
         observeSession()
         updateRouteInfo()
@@ -479,6 +501,7 @@ final class StudioEngine: ObservableObject {
                                     options: [.defaultToSpeaker, .allowBluetoothA2DP])
             try session.setPreferredIOBufferDuration(0.005)
             try session.setActive(true)
+            applyPreferredInput()
         } catch {
             lastError = "Não foi possível configurar o áudio do aparelho. Feche outros apps de áudio e tente de novo."
         }
@@ -535,10 +558,61 @@ final class StudioEngine: ObservableObject {
             .store(in: &sessionCancellables)
     }
 
+    // MARK: - Escolha da entrada
+
+    /// Nome amigável de uma porta de entrada.
+    private static func inputTitle(_ port: AVAudioSessionPortDescription) -> String {
+        switch port.portType {
+        case .builtInMic: return "Microfone do iPhone"
+        case .headsetMic: return "Microfone do fone"
+        case .bluetoothHFP: return "\(port.portName) (Bluetooth)"
+        default: return port.portName
+        }
+    }
+
+    /// Ao plugar um fone com microfone, o iOS troca a entrada para o microfone do fone (longe do
+    /// violão, capta baixo). Aqui vale a escolha do usuário; sem escolha salva: interface USB se
+    /// houver, senão o microfone do iPhone.
+    private func applyPreferredInput() {
+        let session = AVAudioSession.sharedInstance()
+        let inputs = session.availableInputs ?? []
+        guard !inputs.isEmpty else { return }
+        let saved = UserDefaults.standard.string(forKey: Keys.preferredInputType)
+        let target = inputs.first { $0.portType.rawValue == saved }
+            ?? inputs.first { $0.portType == .usbAudio }
+            ?? inputs.first { $0.portType == .builtInMic }
+        guard let target else { return }
+        if session.currentRoute.inputs.first?.uid == target.uid { return }
+        do {
+            try session.setPreferredInput(target)
+        } catch {
+            lastError = "Não foi possível usar \(Self.inputTitle(target)) como entrada."
+        }
+    }
+
+    /// Troca a entrada (só com o transporte parado). A escolha fica salva pelo tipo de entrada.
+    func selectInput(_ id: String) {
+        guard transport == .stopped else { return }
+        let session = AVAudioSession.sharedInstance()
+        guard let port = (session.availableInputs ?? []).first(where: { $0.uid == id }) else { return }
+        UserDefaults.standard.set(port.portType.rawValue, forKey: Keys.preferredInputType)
+        do {
+            try session.setPreferredInput(port)
+        } catch {
+            lastError = "Não foi possível usar \(Self.inputTitle(port)) como entrada."
+        }
+        updateRouteInfo()
+    }
+
     private func updateRouteInfo() {
-        let route = AVAudioSession.sharedInstance().currentRoute
+        let session = AVAudioSession.sharedInstance()
+        let route = session.currentRoute
+        availableInputs = (session.availableInputs ?? []).map {
+            StudioInputOption(id: $0.uid, name: Self.inputTitle($0), portType: $0.portType.rawValue)
+        }
+        selectedInputID = route.inputs.first?.uid
         if let input = route.inputs.first {
-            inputName = input.portType == .builtInMic ? "Microfone do iPhone" : input.portName
+            inputName = Self.inputTitle(input)
         } else {
             inputName = "Sem entrada"
         }
@@ -549,6 +623,7 @@ final class StudioEngine: ObservableObject {
     }
 
     private func handleRouteChange(_ note: Notification) {
+        if isActive && transport == .stopped { applyPreferredInput() }
         updateRouteInfo()
         let raw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
         let reason = raw.flatMap { AVAudioSession.RouteChangeReason(rawValue: $0) }
@@ -683,19 +758,26 @@ final class StudioEngine: ObservableObject {
         let inFormat = input.outputFormat(forBus: 0)
         guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else { return }
 
+        // Ganho da entrada no monitoramento (a gravação recebe o mesmo ganho no tap).
+        let boost = AVAudioUnitEQ(numberOfBands: 1)
+        boost.bands[0].bypass = true
+        boost.globalGain = inputGainDB
         let monitorIn = AVAudioMixerNode()
         let effects = StudioEffectChain()
         let out = AVAudioMixerNode()
+        engine.attach(boost)
         engine.attach(monitorIn)
         engine.attach(out)
-        engine.connect(input, to: monitorIn, format: inFormat)
+        engine.connect(input, to: boost, format: inFormat)
+        engine.connect(boost, to: monitorIn, format: inFormat)
+        inputBoost = boost
         effects.install(in: engine, from: monitorIn, to: out, format: format)
         engine.connect(out, to: engine.mainMixerNode, format: format)
         effects.apply(monitorEffects)
         out.outputVolume = monitorEnabled ? 1 : 0
 
         input.installTap(onBus: 0, bufferSize: 1024, format: nil,
-                         block: StudioTaps.inputTap(meters: meters, recorder: recorder))
+                         block: StudioTaps.inputTap(meters: meters, recorder: recorder, gain: inputGain))
         inputTapInstalled = true
         monitorChain = effects
         monitorOut = out
@@ -718,6 +800,7 @@ final class StudioEngine: ObservableObject {
         masterMixer = nil
         monitorChain = nil
         monitorOut = nil
+        inputBoost = nil
         click = nil
         engine = nil
     }
