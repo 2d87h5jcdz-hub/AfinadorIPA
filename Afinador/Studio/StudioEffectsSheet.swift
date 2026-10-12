@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Folha de efeitos (faixa ou monitoramento)
 // Ordem no motor: noise gate → EQ → compressor → drive → delay → reverb.
@@ -10,6 +11,9 @@ struct StudioEffectsSheet: View {
     /// Seção extra logo abaixo dos presets (ex.: afinação automática das faixas).
     var extraTop: AnyView? = nil
     @Environment(\.dismiss) private var dismiss
+    @State private var ampNames: [String] = StudioAmps.list()
+    @State private var showAmpImporter = false
+    @State private var ampMessage: String?
 
     var body: some View {
         ZStack {
@@ -25,6 +29,8 @@ struct StudioEffectsSheet: View {
                     eqSection
                     compressorSection
                     driveSection
+                    ampSection
+                    modulationSection
                     delaySection
                     reverbSection
                     resetButton
@@ -33,6 +39,10 @@ struct StudioEffectsSheet: View {
             }
         }
         .foregroundColor(.fg)
+        .fileImporter(isPresented: $showAmpImporter, allowedContentTypes: [UTType.data],
+                      allowsMultipleSelection: false) { result in
+            importAmp(result)
+        }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
@@ -81,7 +91,12 @@ struct StudioEffectsSheet: View {
             s.preset = .custom
             settings = s
         } else {
-            settings = EffectSettings.preset(preset)
+            // O amplificador escolhido não faz parte dos presets: continua o mesmo.
+            var s = EffectSettings.preset(preset)
+            s.ampModel = settings.ampModel
+            s.ampInputDB = settings.ampInputDB
+            s.ampOutputDB = settings.ampOutputDB
+            settings = s
         }
     }
 
@@ -124,6 +139,135 @@ struct StudioEffectsSheet: View {
         StudioEffectSection(title: "Drive", systemImage: "bolt.fill") {
             StudioEffectSlider(label: "Distorção (0 = desligado)", value: floatBinding(\.driveAmount),
                                range: 0...1, text: percentText(settings.driveAmount))
+            menuRow(title: "Estilo", value: settings.driveStyle.title) {
+                Picker("Estilo", selection: valueBinding(\.driveStyle)) {
+                    ForEach(DriveStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Amplificador (Neural Amp Modeler)
+
+    private var ampTitle: String {
+        guard let name = settings.ampModel else { return "Nenhum" }
+        return StudioAmps.displayName(name)
+    }
+
+    private var ampSection: some View {
+        StudioEffectSection(title: "Amplificador (IA)", systemImage: "hifispeaker.fill") {
+            Text("Modelos .nam do Neural Amp Modeler imitam amplificadores e pedais reais. Baixe grátis em tone3000.com e importe aqui. Use com o drive desligado.")
+                .font(.system(size: 12))
+                .foregroundColor(.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Text("Modelo")
+                    .font(.system(size: 13))
+                    .foregroundColor(.muted)
+                Spacer()
+                Menu {
+                    Button("Nenhum") { setAmp(nil) }
+                    ForEach(ampNames, id: \.self) { name in
+                        Button(StudioAmps.displayName(name)) { setAmp(name) }
+                    }
+                    Divider()
+                    Button {
+                        showAmpImporter = true
+                    } label: {
+                        Label("Importar arquivo .nam…", systemImage: "square.and.arrow.down")
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(ampTitle)
+                            .font(.system(size: 14, weight: .semibold))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundColor(.brass)
+                }
+            }
+            if settings.ampModel != nil {
+                StudioEffectSlider(label: "Entrada (ganho no amp)", value: plainBinding(\.ampInputDB),
+                                   range: -12...12, text: signedDbText(settings.ampInputDB))
+                StudioEffectSlider(label: "Saída (volume)", value: plainBinding(\.ampOutputDB),
+                                   range: -12...12, text: signedDbText(settings.ampOutputDB))
+            }
+            if let message = ampMessage {
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundColor(message.hasPrefix("✓") ? .ok : .off)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func setAmp(_ name: String?) {
+        var s = settings
+        s.ampModel = name
+        settings = s
+        ampMessage = nil
+    }
+
+    private func importAmp(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let error):
+            ampMessage = "Não deu para abrir: \(error.localizedDescription)"
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            do {
+                let name = try StudioAmps.importModel(from: url)
+                ampNames = StudioAmps.list()
+                setAmp(name)
+                ampMessage = "✓ \(StudioAmps.displayName(name)) importado."
+            } catch {
+                ampMessage = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: Modulação
+
+    private var modulationSection: some View {
+        StudioEffectSection(title: "Modulação", systemImage: "waveform.path") {
+            menuRow(title: "Tipo", value: settings.modType.title) {
+                Picker("Tipo", selection: valueBinding(\.modType)) {
+                    ForEach(ModulationType.allCases) { type in
+                        Text(type.title).tag(type)
+                    }
+                }
+            }
+            if settings.modType != .none {
+                StudioEffectSlider(label: "Velocidade", value: floatBinding(\.modRate),
+                                   range: 0.05...8, text: String(format: "%.2f Hz", settings.modRate))
+                StudioEffectSlider(label: "Profundidade", value: floatBinding(\.modDepth),
+                                   range: 0...1, text: percentText(settings.modDepth))
+                StudioEffectSlider(label: "Mix", value: floatBinding(\.modMix),
+                                   range: 0...1, text: percentText(settings.modMix))
+            }
+        }
+    }
+
+    private func menuRow<Content: View>(title: String, value: String,
+                                        @ViewBuilder content: @escaping () -> Content) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 13))
+                .foregroundColor(.muted)
+            Spacer()
+            Menu {
+                content()
+            } label: {
+                HStack(spacing: 4) {
+                    Text(value)
+                        .font(.system(size: 14, weight: .semibold))
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundColor(.brass)
+            }
         }
     }
 
@@ -160,6 +304,31 @@ struct StudioEffectsSheet: View {
     }
 
     // MARK: Bindings (mexer em qualquer controle vira "Personalizado")
+
+    /// Muda um valor e marca o preset como personalizado.
+    private func valueBinding<V>(_ keyPath: WritableKeyPath<EffectSettings, V>) -> Binding<V> {
+        Binding<V>(
+            get: { settings[keyPath: keyPath] },
+            set: { newValue in
+                var s = settings
+                s[keyPath: keyPath] = newValue
+                s.preset = .custom
+                settings = s
+            }
+        )
+    }
+
+    /// Muda um valor sem mexer no preset (ex.: ganhos do amplificador).
+    private func plainBinding(_ keyPath: WritableKeyPath<EffectSettings, Float>) -> Binding<Float> {
+        Binding<Float>(
+            get: { settings[keyPath: keyPath] },
+            set: { newValue in
+                var s = settings
+                s[keyPath: keyPath] = newValue
+                settings = s
+            }
+        )
+    }
 
     private func floatBinding(_ keyPath: WritableKeyPath<EffectSettings, Float>) -> Binding<Float> {
         Binding<Float>(

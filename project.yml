@@ -15,6 +15,9 @@ targets:
     sources:
       - path: Afinador
         excludes: ["Models", "Models/**"]
+      # Neural Amp Modeler (MIT) — só os .cpp entram no build; Eigen/json são só cabeçalhos (via HEADER_SEARCH_PATHS).
+      - path: Vendor/NAM
+        excludes: ["LICENSE"]
       # Modelo de IA já compilado (baixado no CI da release demucs-model) fica em Afinador/Models.
       # Referência de pasta: mantém a estrutura interna do .mlmodelc e vai para Models/ no bundle.
       # A pasta sempre existe (.gitkeep); sem modelo, o app sai sem o separador.
@@ -38,6 +41,13 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.afinador.app
+        SWIFT_OBJC_BRIDGING_HEADER: Afinador/Afinador-Bridging-Header.h
+        CLANG_CXX_LANGUAGE_STANDARD: c++20
+        CLANG_CXX_LIBRARY: libc++
+        HEADER_SEARCH_PATHS: ["$(SRCROOT)/Vendor", "$(SRCROOT)/Vendor/NAM", "$(SRCROOT)/Vendor/eigen", "$(SRCROOT)/Vendor/nlohmann", "$(SRCROOT)/Afinador/GuitarFX"]
+        GCC_PREPROCESSOR_DEFINITIONS: ["$(inherited)", "NAM_SAMPLE_FLOAT=1", "NAM_ENABLE_A2_FAST=1"]
+        # C++ do amplificador roda em tempo real: otimização máxima (o padrão do Release é -Os).
+        GCC_OPTIMIZATION_LEVEL: "3"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGNING_ALLOWED: "NO"

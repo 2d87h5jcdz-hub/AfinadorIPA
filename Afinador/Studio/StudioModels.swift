@@ -108,7 +108,10 @@ struct StudioProject: Identifiable, Codable, Equatable {
 
 /// Presets prontos de efeito.
 enum EffectPreset: String, Codable, CaseIterable, Identifiable {
-    case none, steelGuitar, nylonGuitar, vocal, electricClean, electricDrive, custom
+    case none, steelGuitar, nylonGuitar, vocal, electricClean, electricDrive
+    // Guitarra (v3): drives com estilos diferentes e modulações.
+    case crunch, highGain, fuzz, solo, cleanChorus, flanger80, phaser, tremolo
+    case custom
     var id: String { rawValue }
 
     var title: String {
@@ -119,13 +122,21 @@ enum EffectPreset: String, Codable, CaseIterable, Identifiable {
         case .vocal: return "Voz"
         case .electricClean: return "Guitarra limpa"
         case .electricDrive: return "Guitarra drive"
+        case .crunch: return "Crunch"
+        case .highGain: return "Distorção pesada"
+        case .fuzz: return "Fuzz"
+        case .solo: return "Solo"
+        case .cleanChorus: return "Limpa com chorus"
+        case .flanger80: return "Flanger anos 80"
+        case .phaser: return "Phaser"
+        case .tremolo: return "Tremolo"
         case .custom: return "Personalizado"
         }
     }
 }
 
 /// Cadeia de efeitos de uma faixa (e do monitoramento ao vivo).
-/// Ordem no motor: noise gate → EQ (3 bandas) → compressor → distorção → delay → reverb.
+/// Ordem no motor: noise gate → EQ (3 bandas) → compressor → distorção → guitarra (amp NAM + modulação) → delay → reverb.
 struct EffectSettings: Codable, Equatable {
     var preset: EffectPreset = .none
     var gateEnabled = false
@@ -140,6 +151,17 @@ struct EffectSettings: Codable, Equatable {
     var delayTime: Float = 0.35          // s
     var delayFeedback: Float = 0.3       // 0 … 0.9
     var reverbMix: Float = 0             // 0 … 1
+    /// Estilo do drive (preset de fábrica da distorção da Apple).
+    var driveStyle: DriveStyle = .distortion
+    /// Bloco Guitarra: amplificador neural (.nam importado, nome do arquivo em Amps/) e ganhos.
+    var ampModel: String?
+    var ampInputDB: Float = 0            // -12 … +12
+    var ampOutputDB: Float = 0           // -12 … +12
+    /// Modulação (depois do amp): chorus, flanger, phaser, tremolo.
+    var modType: ModulationType = .none
+    var modRate: Float = 0.6             // Hz
+    var modDepth: Float = 0.5            // 0 … 1
+    var modMix: Float = 0.5              // 0 … 1
 
     static func preset(_ p: EffectPreset) -> EffectSettings {
         var s = EffectSettings()
@@ -170,8 +192,114 @@ struct EffectSettings: Codable, Equatable {
             s.gateEnabled = true; s.gateThresholdDB = -48
             s.eqLowDB = 2; s.eqMidDB = 3; s.eqHighDB = 1
             s.driveAmount = 0.6; s.reverbMix = 0.15
+        case .crunch:
+            s.gateEnabled = true; s.gateThresholdDB = -52
+            s.eqLowDB = 1; s.eqMidDB = 2; s.eqHighDB = 1.5
+            s.driveStyle = .crunch; s.driveAmount = 0.45
+            s.reverbMix = 0.15
+        case .highGain:
+            s.gateEnabled = true; s.gateThresholdDB = -45
+            s.eqLowDB = 3; s.eqMidDB = -2; s.eqHighDB = 2
+            s.driveStyle = .distortion; s.driveAmount = 0.85
+            s.compressorEnabled = true; s.compressorAmount = 0.3
+            s.reverbMix = 0.12
+        case .fuzz:
+            s.gateEnabled = true; s.gateThresholdDB = -48
+            s.eqLowDB = 2; s.eqMidDB = 1; s.eqHighDB = -1
+            s.driveStyle = .fuzz; s.driveAmount = 0.7
+            s.reverbMix = 0.1
+        case .solo:
+            s.gateEnabled = true; s.gateThresholdDB = -48
+            s.eqLowDB = 0; s.eqMidDB = 3; s.eqHighDB = 1.5
+            s.compressorEnabled = true; s.compressorAmount = 0.5
+            s.driveStyle = .distortion; s.driveAmount = 0.7
+            s.delayMix = 0.25; s.delayTime = 0.38; s.delayFeedback = 0.35
+            s.reverbMix = 0.25
+        case .cleanChorus:
+            s.eqLowDB = -1; s.eqMidDB = 0; s.eqHighDB = 2
+            s.compressorEnabled = true; s.compressorAmount = 0.4
+            s.modType = .chorus; s.modRate = 0.8; s.modDepth = 0.55; s.modMix = 0.5
+            s.reverbMix = 0.2
+        case .flanger80:
+            s.eqLowDB = 0; s.eqMidDB = 1; s.eqHighDB = 2
+            s.driveStyle = .crunch; s.driveAmount = 0.3
+            s.modType = .flanger; s.modRate = 0.25; s.modDepth = 0.8; s.modMix = 0.6
+            s.reverbMix = 0.15
+        case .phaser:
+            s.eqLowDB = 0; s.eqMidDB = 1; s.eqHighDB = 1
+            s.driveStyle = .crunch; s.driveAmount = 0.25
+            s.modType = .phaser; s.modRate = 0.5; s.modDepth = 0.7; s.modMix = 0.6
+            s.reverbMix = 0.15
+        case .tremolo:
+            s.eqLowDB = 0; s.eqMidDB = 0; s.eqHighDB = 1.5
+            s.modType = .tremolo; s.modRate = 5; s.modDepth = 0.7; s.modMix = 1
+            s.reverbMix = 0.25
         }
         return s
+    }
+}
+
+/// Estilo do drive (presets de fábrica do AVAudioUnitDistortion).
+enum DriveStyle: Int, Codable, CaseIterable, Identifiable {
+    case distortion = 0, crunch, funk, fuzz
+    var id: Int { rawValue }
+    var title: String {
+        switch self {
+        case .distortion: return "Distorção"
+        case .crunch: return "Crunch"
+        case .funk: return "Funk"
+        case .fuzz: return "Fuzz / lo-fi"
+        }
+    }
+}
+
+/// Modulação do bloco Guitarra (o número vai para o Audio Unit em C++).
+enum ModulationType: Int, Codable, CaseIterable, Identifiable {
+    case none = 0, chorus, flanger, phaser, tremolo
+    var id: Int { rawValue }
+    var title: String {
+        switch self {
+        case .none: return "Nenhuma"
+        case .chorus: return "Chorus"
+        case .flanger: return "Flanger"
+        case .phaser: return "Phaser"
+        case .tremolo: return "Tremolo"
+        }
+    }
+}
+
+extension EffectSettings {
+    private enum CodingKeys: String, CodingKey {
+        case preset, gateEnabled, gateThresholdDB, eqLowDB, eqMidDB, eqHighDB
+        case compressorEnabled, compressorAmount, driveAmount, delayMix, delayTime, delayFeedback, reverbMix
+        case driveStyle, ampModel, ampInputDB, ampOutputDB, modType, modRate, modDepth, modMix
+    }
+
+    /// Lê projetos antigos: campos que não existiam ficam no padrão.
+    init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        preset = (try? c.decodeIfPresent(EffectPreset.self, forKey: .preset)) ?? .custom
+        gateEnabled = try c.decodeIfPresent(Bool.self, forKey: .gateEnabled) ?? gateEnabled
+        gateThresholdDB = try c.decodeIfPresent(Float.self, forKey: .gateThresholdDB) ?? gateThresholdDB
+        eqLowDB = try c.decodeIfPresent(Float.self, forKey: .eqLowDB) ?? eqLowDB
+        eqMidDB = try c.decodeIfPresent(Float.self, forKey: .eqMidDB) ?? eqMidDB
+        eqHighDB = try c.decodeIfPresent(Float.self, forKey: .eqHighDB) ?? eqHighDB
+        compressorEnabled = try c.decodeIfPresent(Bool.self, forKey: .compressorEnabled) ?? compressorEnabled
+        compressorAmount = try c.decodeIfPresent(Float.self, forKey: .compressorAmount) ?? compressorAmount
+        driveAmount = try c.decodeIfPresent(Float.self, forKey: .driveAmount) ?? driveAmount
+        delayMix = try c.decodeIfPresent(Float.self, forKey: .delayMix) ?? delayMix
+        delayTime = try c.decodeIfPresent(Float.self, forKey: .delayTime) ?? delayTime
+        delayFeedback = try c.decodeIfPresent(Float.self, forKey: .delayFeedback) ?? delayFeedback
+        reverbMix = try c.decodeIfPresent(Float.self, forKey: .reverbMix) ?? reverbMix
+        driveStyle = (try? c.decodeIfPresent(DriveStyle.self, forKey: .driveStyle)) ?? driveStyle
+        ampModel = try c.decodeIfPresent(String.self, forKey: .ampModel)
+        ampInputDB = try c.decodeIfPresent(Float.self, forKey: .ampInputDB) ?? ampInputDB
+        ampOutputDB = try c.decodeIfPresent(Float.self, forKey: .ampOutputDB) ?? ampOutputDB
+        modType = (try? c.decodeIfPresent(ModulationType.self, forKey: .modType)) ?? modType
+        modRate = try c.decodeIfPresent(Float.self, forKey: .modRate) ?? modRate
+        modDepth = try c.decodeIfPresent(Float.self, forKey: .modDepth) ?? modDepth
+        modMix = try c.decodeIfPresent(Float.self, forKey: .modMix) ?? modMix
     }
 }
 

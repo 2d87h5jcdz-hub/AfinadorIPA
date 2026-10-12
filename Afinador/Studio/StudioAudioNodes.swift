@@ -50,13 +50,15 @@ enum StudioAudioUnits {
     }
 }
 
-// MARK: - Cadeia de efeitos: gate → EQ → compressor → drive → delay → reverb
+// MARK: - Cadeia de efeitos: gate → EQ → compressor → drive → guitarra (amp + modulação) → delay → reverb
 
 final class StudioEffectChain {
     let gate: AVAudioUnitEffect
     let eq: AVAudioUnitEQ
     let compressor: AVAudioUnitEffect
     let drive: AVAudioUnitDistortion
+    /// Bloco próprio (C++): amplificador neural NAM + chorus/flanger/phaser/tremolo.
+    let guitar: AVAudioUnitEffect
     let delay: AVAudioUnitDelay
     let reverb: AVAudioUnitReverb
 
@@ -65,6 +67,9 @@ final class StudioEffectChain {
         eq = AVAudioUnitEQ(numberOfBands: 3)
         compressor = AVAudioUnitEffect(audioComponentDescription: StudioAudioUnits.dynamicsDescription)
         drive = AVAudioUnitDistortion()
+        PestanaGuitarAU.registerIfNeeded()
+        guitar = AVAudioUnitEffect(audioComponentDescription: PestanaGuitarAU.pestanaComponentDescription())
+        guitar.bypass = true
         delay = AVAudioUnitDelay()
         reverb = AVAudioUnitReverb()
 
@@ -92,7 +97,12 @@ final class StudioEffectChain {
         high.bypass = false
     }
 
-    var nodes: [AVAudioNode] { [gate, eq, compressor, drive, delay, reverb] }
+    var nodes: [AVAudioNode] { [gate, eq, compressor, drive, guitar, delay, reverb] }
+
+    private var guitarUnit: PestanaGuitarAU? { guitar.auAudioUnit as? PestanaGuitarAU }
+    /// Modelo .nam carregado agora (para não reler o arquivo a cada ajuste).
+    private var loadedAmp: String?
+    private var driveStyle: DriveStyle = .distortion
 
     /// Anexa e conecta source → efeitos → destination, todos no mesmo formato.
     func install(in engine: AVAudioEngine, from source: AVAudioNode, to destination: AVAudioNode,
@@ -113,6 +123,7 @@ final class StudioEffectChain {
         applyEQ(s, extraGainDB: extraGainDB)
         applyCompressor(s)
         applyDrive(s)
+        applyGuitar(s)
         applyDelay(s)
         reverb.wetDryMix = Self.clamp(s.reverbMix, 0, 1) * 100
         reverb.bypass = s.reverbMix <= 0.001
@@ -156,7 +167,35 @@ final class StudioEffectChain {
         compressor.bypass = !s.compressorEnabled
     }
 
+    private func applyGuitar(_ s: EffectSettings) {
+        guard let unit = guitarUnit else {
+            guitar.bypass = true
+            return
+        }
+        if s.ampModel != loadedAmp {
+            loadedAmp = s.ampModel
+            if let name = s.ampModel, let url = StudioAmps.url(for: name) {
+                var error: NSString?
+                if !unit.loadAmpModel(atPath: url.path, error: &error) { unit.clearAmpModel() }
+            } else {
+                unit.clearAmpModel()
+            }
+        }
+        unit.setAmpInputDB(Self.clamp(s.ampInputDB, -12, 12), outputDB: Self.clamp(s.ampOutputDB, -12, 12))
+        unit.setModulationType(s.modType.rawValue, rate: s.modRate, depth: s.modDepth, mix: s.modMix)
+        guitar.bypass = !(unit.hasAmpModel || s.modType != .none)
+    }
+
     private func applyDrive(_ s: EffectSettings) {
+        if s.driveStyle != driveStyle {
+            driveStyle = s.driveStyle
+            switch s.driveStyle {
+            case .distortion: drive.loadFactoryPreset(.multiDistortedCubed)
+            case .crunch: drive.loadFactoryPreset(.multiDistortedSquared)
+            case .funk: drive.loadFactoryPreset(.multiDistortedFunk)
+            case .fuzz: drive.loadFactoryPreset(.multiDecimated2)
+            }
+        }
         let d = Self.clamp(s.driveAmount, 0, 1)
         drive.preGain = -12 + 24 * d          // -80 … 20 dB
         drive.wetDryMix = 15 + 70 * d         // %
