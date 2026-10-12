@@ -51,6 +51,16 @@ O app não está na App Store. Ele é distribuído como arquivo **.ipa**, que vo
 3. Na primeira vez, se o iPhone pedir, vá em **Ajustes › Geral › VPN e Gerenciamento de Dispositivos** e confie no seu Apple ID.
 4. Com Apple ID gratuito, a assinatura vale **7 dias**. Depois disso é só reinstalar por cima: **suas músicas e gravações não se perdem**.
 
+### Atualizações automáticas (AltStore ou SideStore)
+
+Com o **[SideStore](https://sidestore.io)** ou o **[AltStore](https://altstore.io)**, adicione a fonte do Pestana Estúdio. Assim você instala o app e recebe as atualizações com um toque, sem baixar o .ipa de novo:
+
+```
+https://github.com/2d87h5jcdz-hub/PestanaEstudio/releases/latest/download/source.json
+```
+
+No app, vá em **Fontes › +**, cole o endereço acima e instale o **Pestana Estúdio**. O SideStore também renova a assinatura de 7 dias pelo próprio iPhone, sem precisar do computador depois da primeira instalação.
+
 > Se o app pedir acesso ao microfone, permita. Ele é usado para afinar e gravar. Nada sai do seu iPhone sem você compartilhar.
 
 ---
@@ -232,3 +242,7 @@ No app **Arquivos › No meu iPhone › Pestana**. Dá para copiar e fazer backu
 O .ipa é gerado pelo GitHub Actions (workflow **Gerar IPA**, em macOS) a partir do `project.yml` (XcodeGen). O .ipa sai sem assinatura, e a ferramenta de instalação faz a assinatura. O modelo de separação (Demucs) é convertido para Core ML pelo workflow `demucs-model.yml`.
 
 O amplificador usa o [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore) (MIT), com [Eigen](https://eigen.tuxfamily.org) (MPL2) e [nlohmann/json](https://github.com/nlohmann/json) (MIT), incluídos em `Vendor/` com as licenças. Uma Release nova sai sozinha quando o `main` recebe uma versão nova em `MARKETING_VERSION` (`project.yml`), usando as notas em `docs/release-notes/`.
+
+## Licença
+
+Código sob a [licença MIT](LICENSE). Os componentes de terceiros estão em [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

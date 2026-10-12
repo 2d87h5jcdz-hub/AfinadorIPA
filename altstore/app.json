@@ -1,0 +1,35 @@
+{
+  "source": {
+    "name": "Pestana Estúdio",
+    "subtitle": "Música no iPhone: grátis e sem anúncios",
+    "description": "Fonte oficial do Pestana Estúdio. Adicione esta fonte no AltStore ou no SideStore para instalar o app e receber as atualizações com um toque.",
+    "website": "https://github.com/2d87h5jcdz-hub/PestanaEstudio",
+    "tintColor": "#D9A441",
+    "iconURL": "https://raw.githubusercontent.com/2d87h5jcdz-hub/PestanaEstudio/main/Afinador/Assets.xcassets/AppIcon.appiconset/icon-1024.png"
+  },
+  "app": {
+    "name": "Pestana Estúdio",
+    "bundleIdentifier": "com.afinador.app",
+    "developerName": "Pestana Estúdio",
+    "subtitle": "Afinador, acordes, metrônomo, estúdio e treino com IA",
+    "localizedDescription": "App gratuito e sem anúncios para quem toca.\n\n• Afinador preciso, com várias afinações\n• Acordes com diagramas e áudio\n• Metrônomo com Tap\n• Estúdio de gravação em camadas: faixas, punch-in, efeitos, afinação automática da voz e amplificador com IA (Neural Amp Modeler)\n• Treino: mude o tom e a velocidade, repita trechos e separe os instrumentos com IA no próprio iPhone\n\nO app é gratuito. Se ele te ajudou, uma doação via Pix de qualquer valor ajuda a manter o projeto (chave no site do projeto).",
+    "iconURL": "https://raw.githubusercontent.com/2d87h5jcdz-hub/PestanaEstudio/main/Afinador/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+    "tintColor": "#D9A441",
+    "category": "entertainment",
+    "minOSVersion": "16.0",
+    "screenshots": [
+      "https://raw.githubusercontent.com/2d87h5jcdz-hub/PestanaEstudio/main/docs/prints/01-afinador.jpg",
+      "https://raw.githubusercontent.com/2d87h5jcdz-hub/PestanaEstudio/main/docs/prints/06-estudio-timeline.jpg",
+      "https://raw.githubusercontent.com/2d87h5jcdz-hub/PestanaEstudio/main/docs/prints/13-treino-separacao.jpg",
+      "https://raw.githubusercontent.com/2d87h5jcdz-hub/PestanaEstudio/main/docs/prints/12-treino-player.jpg",
+      "https://raw.githubusercontent.com/2d87h5jcdz-hub/PestanaEstudio/main/docs/prints/02-acordes.jpg",
+      "https://raw.githubusercontent.com/2d87h5jcdz-hub/PestanaEstudio/main/docs/prints/03-metronomo.jpg"
+    ],
+    "appPermissions": {
+      "entitlements": [],
+      "privacy": {
+        "NSMicrophoneUsageDescription": "O app usa o microfone para afinar o instrumento e gravar suas músicas. Nada sai do seu iPhone sem você compartilhar."
+      }
+    }
+  }
+}
