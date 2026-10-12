@@ -87,13 +87,15 @@ tap_text "Estúdio" && shot 06-estudio
 tap_text "Treino" && shot 07-treino
 
 # Paisagem
-adb shell settings put system user_rotation 1
-sleep 2
+adb shell settings put system accelerometer_rotation 0
+adb shell wm user-rotation lock 1 || adb shell settings put system user_rotation 1
+sleep 4
+adb shell dumpsys window | grep -m1 -i "mCurrentRotation\|mRotation" || true
 tap_text "Afinador" && shot 08-afinador-paisagem 3
 tap_text "Acordes" && shot 09-acordes-paisagem
 tap_text "Metrônomo" && shot 10-metronomo-paisagem
 alive "girar a tela"
-adb shell settings put system user_rotation 0
+adb shell wm user-rotation lock 0 || adb shell settings put system user_rotation 0
 
 adb logcat -d > "$OUT/logcat.txt"
 if grep -q "FATAL EXCEPTION" "$OUT/logcat.txt"; then
