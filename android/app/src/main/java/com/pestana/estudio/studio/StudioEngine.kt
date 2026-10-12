@@ -627,7 +627,10 @@ class StudioEngine(context: Context) {
         if (lv.isNotEmpty()) {
             val v = max(lv[0], inputLevel * 0.82f)
             inputLevel = if (v < 0.01f) 0f else v
+            if (lv[0] > measurePeak) measurePeak = lv[0]
         }
+        if (n.inputClips() > 0) clipUntil = System.currentTimeMillis() + 2500
+        inputClipping = System.currentTimeMillis() < clipUntil
         if (transport == Transport.STOPPED) return
         val st = n.status()
         val songTime = st[1].toDouble() / STUDIO_RATE
@@ -741,7 +744,7 @@ class StudioEngine(context: Context) {
     }
 
     fun changeInputGain(db: Float) {
-        inputGainDb = db.coerceIn(-12f, 24f)
+        inputGainDb = db.coerceIn(-24f, 24f)
         prefs.edit().putFloat("studioGain", inputGainDb).apply()
         native?.setInputGain(inputGainDb)
     }
@@ -762,6 +765,46 @@ class StudioEngine(context: Context) {
     }
 
     fun measuredLatencyMs(): Double = native?.latencyMs() ?: 0.0
+
+    // MARK: nível da entrada
+
+    /** A entrada estourou há pouco (mostra o aviso "Muito alto"). */
+    var inputClipping by mutableStateOf(false)
+        private set
+    private var clipUntil = 0L
+    private var measurePeak = 0f
+    /** Ajuste automático do ganho em andamento (segundos restantes), ou null. */
+    var autoLevelLeft by mutableStateOf<Int?>(null)
+        private set
+
+    /**
+     * Ajustar nível: escuta ~4 s (o usuário toca o mais forte que vai tocar) e acerta o ganho
+     * para o pico ficar perto de −6 dB. Se estourar, baixa bem e mede de novo.
+     */
+    fun autoLevel() {
+        if (autoLevelLeft != null || native?.hasInput() != true) {
+            if (native?.hasInput() != true) lastError = "Abra uma música e libere o microfone para ajustar o nível."
+            return
+        }
+        scope.launch {
+            repeat(3) { round ->
+                measurePeak = 0f
+                for (sLeft in 4 downTo 1) { autoLevelLeft = sLeft; delay(1000) }
+                val pk = measurePeak
+                when {
+                    pk < 0.003f -> { autoLevelLeft = null; lastError = "Não ouvi nada. Toque ou cante perto do microfone e tente de novo."; return@launch }
+                    pk >= 0.98f -> changeInputGain(inputGainDb - 12f) // estourou: baixa e mede de novo
+                    else -> {
+                        val target = -6f - (20 * kotlin.math.log10(pk))
+                        changeInputGain((inputGainDb + target).coerceIn(-24f, 24f))
+                        autoLevelLeft = null
+                        return@launch
+                    }
+                }
+                if (round == 2) autoLevelLeft = null
+            }
+        }
+    }
 
     // MARK: amps (.nam)
 

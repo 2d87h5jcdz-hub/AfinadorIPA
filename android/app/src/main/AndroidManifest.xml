@@ -6,6 +6,11 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <!-- Só para baixar o modelo de IA do Treino (uma vez). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Separação de instrumentos em segundo plano (serviço com notificação de progresso). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:allowBackup="true"
@@ -37,6 +42,12 @@
                 <data android:mimeType="audio/*" />
             </intent-filter>
         </activity>
+        <!-- IA de separação num processo à parte: se faltar memória, só ele é fechado. -->
+        <service
+            android:name=".practice.SeparationService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:process=":ia" />
         <!-- Compartilhar a mixagem exportada pelo Estúdio. -->
         <provider
             android:name="androidx.core.content.FileProvider"

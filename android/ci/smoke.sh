@@ -135,7 +135,7 @@ if wait_text "MÚSICA ORIGINAL" 60; then
   if tap_text "Separar instrumentos (IA)"; then
     sleep 2; tap_text "Baixar e separar"
     sleep 20; shot 13-treino-separando 1
-    if wait_text "Usar instrumentos separados" 900; then
+    if wait_text "Usar instrumentos separados" 1500; then
       sleep 3; scroll_down; scroll_down
       tap_text "Karaokê"; sleep 1
       shot 14-treino-instrumentos 1

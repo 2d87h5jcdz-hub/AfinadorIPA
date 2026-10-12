@@ -31,6 +31,8 @@ class NativeStudio {
     /** [entrada, faixa 0, faixa 1, …] */
     fun levels(): FloatArray = nLevels(h)
     fun latencyMs(): Double = nLatencyMs(h)
+    /** Amostras da entrada que estouraram desde a última chamada. */
+    fun inputClips(): Long = nInputClips(h)
 
     private external fun nCreate(): Long
     private external fun nDestroy(h: Long)
@@ -48,4 +50,5 @@ class NativeStudio {
     private external fun nStatus(h: Long): LongArray
     private external fun nLevels(h: Long): FloatArray
     private external fun nLatencyMs(h: Long): Double
+    private external fun nInputClips(h: Long): Long
 }

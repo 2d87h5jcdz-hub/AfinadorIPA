@@ -20,18 +20,26 @@ import kotlin.math.sqrt
  */
 class ModelStore(filesDir: File) {
     companion object {
-        const val URL_MODEL = "https://github.com/2d87h5jcdz-hub/PestanaEstudio/releases/download/demucs-model/HTDemucs.onnx"
+        // v2: atenção em blocos — mesmo resultado, pico de memória bem menor (a v1 fechava o app em
+        // celulares com 4 GB). O nome novo faz quem tinha a v1 baixar de novo.
+        const val URL_MODEL = "https://github.com/2d87h5jcdz-hub/PestanaEstudio/releases/download/demucs-model/HTDemucs-v2.onnx"
         const val APPROX_MB = 115
     }
 
     private val dir = File(filesDir, "models")
-    val file = File(dir, "HTDemucs.onnx")
+    val file = File(dir, "HTDemucs-v2.onnx")
     val isReady: Boolean get() = file.exists() && file.length() > 10_000_000
+
+    init {
+        // Modelo antigo (v1) só ocupa espaço.
+        File(dir, "HTDemucs.onnx").delete()
+        File(dir, "HTDemucs.onnx.part").delete()
+    }
 
     /** Baixa o modelo (com retomada se cair no meio). */
     fun download(progress: (Double) -> Unit, cancelled: () -> Boolean) {
         dir.mkdirs()
-        val part = File(dir, "HTDemucs.onnx.part")
+        val part = File(dir, "HTDemucs-v2.onnx.part")
         var url = URL(URL_MODEL)
         var conn: HttpURLConnection
         var redirects = 0
@@ -77,7 +85,7 @@ class ModelStore(filesDir: File) {
 
     fun delete() {
         file.delete()
-        File(dir, "HTDemucs.onnx.part").delete()
+        File(dir, "HTDemucs-v2.onnx.part").delete()
     }
 }
 
@@ -91,7 +99,7 @@ private fun procMb(key: String): Long = try {
 private fun rssMb(): String = "${procMb("VmRSS:")} MB (pico ${procMb("VmHWM:")} MB)"
 
 /** Roda o HTDemucs (ONNX Runtime, CPU) sobre a música inteira e grava um arquivo por stem. */
-class DemucsOnnxSeparator(private val model: File) {
+class DemucsOnnxSeparator(private val model: File, private val threads: Int = 4) {
 
     class Result(val stems: Map<StemKind, File>)
 
@@ -108,11 +116,15 @@ class DemucsOnnxSeparator(private val model: File) {
     ): Result {
         val env = OrtEnvironment.getEnvironment()
         val opts = OrtSession.SessionOptions().apply {
-            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-            setIntraOpNumThreads(Runtime.getRuntime().availableProcessors().coerceIn(2, 6))
-            // Sem arena nem padrão de memória: a memória da inferência volta ao sistema entre
-            // segmentos (com a arena o pico chegava a ~3 GB e o Android matava o app).
-            setCPUArenaAllocator(false)
+            // Medido no CI (2 inferências seguidas, scripts/onnx_memory_configs.py):
+            //   otimizações ALL ................ ~1,9 GB de pico
+            //   sem otimizações + arena ........ ~0,8 GB de pico  ← usado aqui
+            // As otimizações do grafo criam cópias enormes dos pesos/ativações; sem elas a IA cabe
+            // em celulares de 3–4 GB. A arena reaproveita a memória entre os segmentos.
+            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.NO_OPT)
+            setIntraOpNumThreads(threads)
+            setInterOpNumThreads(1)
+            setCPUArenaAllocator(true)
             setMemoryPatternOptimization(false)
         }
         val session = env.createSession(model.path, opts)

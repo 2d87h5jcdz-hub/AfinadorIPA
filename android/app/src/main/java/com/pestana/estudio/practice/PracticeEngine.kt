@@ -85,6 +85,11 @@ class PracticeEngine(context: Context) {
     var separationProgress by mutableDoubleStateOf(0.0)
         private set
     private var separationJob: Job? = null
+
+    init {
+        // Separação que continuou rodando (serviço da IA) enquanto o app estava fechado.
+        scope.launch { resumeSeparationIfRunning() }
+    }
     @Volatile private var cancelFlag = false
 
     // Áudio
@@ -421,27 +426,14 @@ class PracticeEngine(context: Context) {
                         models.download({ p -> scope.launch { separationProgress = p } }, { cancelFlag })
                     }
                 }
+                if (cancelFlag) return@launch
                 separationStage = "Preparando a música…"
                 separationProgress = 0.0
-                val songPcm = store.songPcm(song)
-                val result = withContext(Dispatchers.Default) {
-                    if (!songPcm.exists()) AudioDecoder.decodeToPcm(app, Uri.fromFile(store.songFile(song)), songPcm)
-                    scope.launch { separationStage = "Separando os instrumentos…" }
-                    PcmFile(songPcm).use { pcm ->
-                        DemucsOnnxSeparator(models.file).separate(
-                            pcm,
-                            pcmCacheFor = { kind -> store.stemPcm(song, kind) },
-                            m4aFor = { kind -> File(store.stemsFolder(song), "${kind.key}.m4a") },
-                            progress = { p -> scope.launch { separationProgress = p } },
-                            cancelled = { cancelFlag },
-                        )
-                    }
-                }
-                finishSeparation(song.id, result)
+                // A IA roda num processo à parte (SeparationService): se faltar memória, só ele cai.
+                SeparationService.start(app, song.id)
+                watchSeparation(song.id)
             } catch (e: InterruptedException) {
                 // cancelado
-            } catch (e: OutOfMemoryError) {
-                lastError = "Faltou memória para a separação neste aparelho."
             } catch (e: Exception) {
                 lastError = "A separação falhou: ${e.message ?: e.javaClass.simpleName}"
             } finally {
@@ -451,13 +443,98 @@ class PracticeEngine(context: Context) {
         }
     }
 
-    fun cancelSeparation() {
-        cancelFlag = true
+    /** Acompanha o arquivo de status do serviço até terminar (ou o processo da IA morrer). */
+    private suspend fun watchSeparation(songId: String) {
+        val file = SeparationService.statusFile(app)
+        var missingSince = 0L
+        while (true) {
+            delay(400)
+            val st = try { org.json.JSONObject(file.readText()) } catch (_: Exception) { continue }
+            when (st.optString("state")) {
+                "starting", "running" -> {
+                    separationProgress = st.optDouble("progress", 0.0)
+                    st.optString("stage").takeIf { it.isNotEmpty() }?.let { separationStage = it }
+                    // O processo da IA ainda existe? (o Android pode tê-lo matado por falta de memória)
+                    if (iaProcessAlive()) {
+                        missingSince = 0L
+                    } else {
+                        if (missingSince == 0L) missingSince = System.currentTimeMillis()
+                        if (System.currentTimeMillis() - missingSince > 4000) {
+                            lastError = iaDeathMessage()
+                            file.delete()
+                            return
+                        }
+                    }
+                }
+                "done" -> {
+                    val stems = st.optJSONObject("stems")
+                    val map = mutableMapOf<String, String>()
+                    stems?.keys()?.forEach { k -> map[k] = stems.getString(k) }
+                    file.delete()
+                    finishSeparation(songId, map)
+                    return
+                }
+                "cancelled" -> { file.delete(); return }
+                "error" -> {
+                    lastError = st.optString("message", "A separação falhou.")
+                    file.delete()
+                    return
+                }
+                else -> return
+            }
+        }
     }
 
-    private fun finishSeparation(songId: String, result: DemucsOnnxSeparator.Result) {
+    private fun iaProcessAlive(): Boolean {
+        val am = app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        return am.runningAppProcesses?.any { it.processName.endsWith(":ia") } == true
+    }
+
+    /** Explica por que o processo da IA sumiu (Android 11+: motivo registrado pelo sistema). */
+    private fun iaDeathMessage(): String {
+        var reason = ""
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            val am = app.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            val info = am.getHistoricalProcessExitReasons(app.packageName, 0, 10).firstOrNull { it.processName.endsWith(":ia") }
+            if (info != null) {
+                reason = when (info.reason) {
+                    android.app.ApplicationExitInfo.REASON_LOW_MEMORY ->
+                        "O Android fechou a separação por falta de memória. Feche outros apps (principalmente jogos e o navegador) e tente de novo."
+                    android.app.ApplicationExitInfo.REASON_CRASH_NATIVE, android.app.ApplicationExitInfo.REASON_CRASH ->
+                        "A IA travou neste aparelho (${info.description ?: "erro interno"})."
+                    android.app.ApplicationExitInfo.REASON_SIGNALED -> "O sistema interrompeu a separação (${info.description ?: "sinal"})."
+                    else -> "A separação foi interrompida (motivo ${info.reason}: ${info.description ?: "-"})."
+                }
+                android.util.Log.w("Pestana", "IA morreu: motivo=${info.reason} ${info.description} pss=${info.pss}kB rss=${info.rss}kB")
+            }
+        }
+        return reason.ifEmpty { "A separação foi interrompida pelo sistema. Feche outros apps e tente de novo." }
+    }
+
+    /** Ao abrir o app: se uma separação continua rodando no serviço, volta a acompanhar. */
+    fun resumeSeparationIfRunning() {
+        val f = SeparationService.statusFile(app)
+        if (separating || !f.exists()) return
+        val st = try { org.json.JSONObject(f.readText()) } catch (_: Exception) { return }
+        val songId = st.optString("songId")
+        if (st.optString("state") in listOf("starting", "running", "done")) {
+            separating = true
+            separationJob = scope.launch {
+                try { watchSeparation(songId) } finally { separating = false; separationJob = null }
+            }
+        } else {
+            f.delete()
+        }
+    }
+
+    fun cancelSeparation() {
+        cancelFlag = true
+        SeparationService.cancel(app)
+    }
+
+    private fun finishSeparation(songId: String, map: Map<String, String>) {
         val song = library.firstOrNull { it.id == songId } ?: return
-        val map = result.stems.map { (k, f) -> k.key to f.name }.toMap()
+        if (map.isEmpty()) return
         val updated = song.copy(stemFiles = map)
         update(updated)
         if (current?.id == songId) {

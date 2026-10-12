@@ -443,6 +443,7 @@ private fun InputCard(studio: StudioEngine, askMic: () -> Unit) {
                 )
             }
             LevelBar(studio.inputLevel, Modifier.width(60.dp))
+            if (studio.inputClipping) Text(" !", style = Type.body(14.sp, FontWeight.Bold), color = Palette.off)
             Spacer(Modifier.width(8.dp))
             Icon(if (open) PIcons.chevronDown else PIcons.chevronRight, null, tint = Palette.muted, modifier = Modifier.size(16.dp))
         }
@@ -451,7 +452,24 @@ private fun InputCard(studio: StudioEngine, askMic: () -> Unit) {
                 SPillButton("Permitir microfone", PIcons.mic, filled = true, onClick = askMic)
             }
             InputPicker(studio)
-            SSlider("Ganho", studio.inputGainDb, -12f..24f, "%+.0f dB".format(studio.inputGainDb)) { studio.changeInputGain(it) }
+            LevelBar(studio.inputLevel, Modifier.fillMaxWidth())
+            if (studio.inputClipping) {
+                Text("Muito alto — diminua o ganho (ou use Ajustar nível).", style = Type.body(12.sp, FontWeight.SemiBold), color = Palette.off)
+            }
+            SSlider("Ganho", studio.inputGainDb, -24f..24f, "%+.0f dB".format(studio.inputGainDb)) { studio.changeInputGain(Math.round(it).toFloat()) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SPillButton(
+                    studio.autoLevelLeft?.let { "Ouvindo… $it" } ?: "Ajustar nível",
+                    PIcons.sliders,
+                    filled = false,
+                    enabled = studio.autoLevelLeft == null && studio.transport == Transport.STOPPED,
+                ) { studio.autoLevel() }
+                Text(
+                    if (studio.autoLevelLeft != null) "Toque o mais forte que vai tocar." else "Toque forte por 4 s e o app acerta o ganho.",
+                    style = Type.body(12.sp),
+                    color = Palette.muted,
+                )
+            }
             if (studio.monitorEnabled && !studio.headphones) {
                 Text(
                     "Conecte um fone de ouvido. Sem fone, o som do alto-falante volta para o microfone e pode dar microfonia.",

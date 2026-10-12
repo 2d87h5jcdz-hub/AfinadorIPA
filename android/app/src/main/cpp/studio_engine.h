@@ -46,6 +46,8 @@ class StudioEngine : public oboe::AudioStreamDataCallback, public oboe::AudioStr
   int64_t songFrame() const { return mSongFrame.load(); }
   int64_t recordedFrames() const { return mRecordedFrames.load(); }
   float takeInputPeak();
+  /// Amostras da entrada que chegaram ao limite (estouro) desde a última leitura.
+  int64_t takeInputClips() { return mInputClips.exchange(0); }
   /// Picos (0…1) das faixas, na ordem da disposição atual.
   std::vector<float> trackPeaks();
   double latencyMillis();
@@ -91,9 +93,19 @@ class StudioEngine : public oboe::AudioStreamDataCallback, public oboe::AudioStr
   std::atomic<float> mInputGain{1};
   std::atomic<bool> mMonitorOn{false};
   std::atomic<float> mInputPeak{0};
+  std::atomic<int64_t> mInputClips{0};
+  std::vector<float> mRec = std::vector<float>(kMaxBlock);
   FxChain mMonitorFx;
   std::atomic<bool> mMonitorHasFx{false};
   std::vector<float> mIn, mL, mR, mML, mMR;
+  // Fila da entrada: o microfone chega em rajadas que não batem com as da saída; sem fila,
+  // a leitura sem espera devolvia "buracos" (estalos e cortes na gravação).
+  std::vector<float> mInFifo = std::vector<float>(kSampleRate);  // 1 s
+  size_t mFifoHead = 0, mFifoCount = 0;
+  bool mInPrimed = false;
+  int mInTarget = 0;  // quadros mantidos na fila (2 rajadas da entrada)
+  std::atomic<int64_t> mInUnderruns{0};
+  void pullInput(int n);
 
   // Gravação
   FloatRing mRing{size_t(kSampleRate) * 20};

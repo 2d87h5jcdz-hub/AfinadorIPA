@@ -629,6 +629,12 @@ private fun StemsCard(engine: PracticeEngine) {
 @Composable
 private fun SeparatePanel(engine: PracticeEngine) {
     var askDownload by remember { mutableStateOf(false) }
+    // Notificação com o progresso (Android 13+ pede permissão; sem ela a separação roda igual).
+    val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val startSeparation = {
+        if (android.os.Build.VERSION.SDK_INT >= 33) notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        engine.separateCurrent()
+    }
     if (engine.separating) {
         val p = engine.separationProgress.toFloat().coerceIn(0f, 1f)
         LinearProgressIndicator(
@@ -647,14 +653,14 @@ private fun SeparatePanel(engine: PracticeEngine) {
             TextButton(onClick = { engine.cancelSeparation() }) { Text("Cancelar", color = Palette.off) }
         }
         Text(
-            "Leva alguns minutos (a IA roda no próprio celular). Deixe o app aberto — a tela fica acesa.",
+            "Leva alguns minutos (a IA roda no próprio celular). Pode apagar a tela ou usar outro app: o progresso aparece na notificação.",
             style = Type.body(12.sp),
             color = Palette.muted,
         )
         return
     }
     BrassButton("Separar instrumentos (IA)", PIcons.sparkle, enabled = engine.busy == null) {
-        if (engine.modelReady) engine.separateCurrent() else askDownload = true
+        if (engine.modelReady) startSeparation() else askDownload = true
     }
     Text(
         "Separa em: Voz, Bateria, Baixo, Violão/Guitarra, Piano e Outros. Depois dá para tirar o violão e tocar por cima, ou tirar a voz e cantar.",
@@ -673,7 +679,7 @@ private fun SeparatePanel(engine: PracticeEngine) {
                 )
             },
             confirmButton = {
-                TextButton(onClick = { askDownload = false; engine.separateCurrent() }) { Text("Baixar e separar", color = Palette.brass) }
+                TextButton(onClick = { askDownload = false; startSeparation() }) { Text("Baixar e separar", color = Palette.brass) }
             },
             dismissButton = { TextButton(onClick = { askDownload = false }) { Text("Agora não", color = Palette.muted) } },
             containerColor = Palette.panel,

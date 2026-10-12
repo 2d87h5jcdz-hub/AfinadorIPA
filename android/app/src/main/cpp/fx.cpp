@@ -195,7 +195,8 @@ void FxChain::process(float* l, float* r, int n) {
   if (p.compressorEnabled) {
     const float amt = clampf(p.compressorAmount, 0, 1);
     const float thDB = -10 - 24 * amt, ratio = 2 + 4 * amt;
-    const float makeup = dbToGain(-thDB * (1 - 1 / ratio) * 0.5f);
+    // Compensação moderada (≈ 1/4 da redução máxima): antes era o dobro e a voz estourava.
+    const float makeup = dbToGain(std::min(6.0f, -thDB * (1 - 1 / ratio) * 0.25f));
     const float att = std::exp(-1.0f / float(0.005 * mSr)), rel = std::exp(-1.0f / float(0.12 * mSr));
     for (int i = 0; i < n; i++) {
       float a = std::max(std::fabs(l[i]), std::fabs(r[i]));

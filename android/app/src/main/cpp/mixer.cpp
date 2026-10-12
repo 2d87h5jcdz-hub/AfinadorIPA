@@ -88,6 +88,13 @@ void Mixer::render(const Song& song, int64_t songFrame, int n, float* outL, floa
     }
     t.peak.store(std::max(pk, t.peak.load(std::memory_order_relaxed) * 0.9f), std::memory_order_relaxed);
   }
+  // Limitador da mixagem: acima de −3 dB arredonda em vez de cortar (nunca estoura duro).
+  for (int i = 0; i < n; i++) {
+    for (float* v : {&outL[i], &outR[i]}) {
+      const float a = std::fabs(*v);
+      if (a > 0.7f) *v = std::copysign(0.7f + 0.29f * std::tanh((a - 0.7f) / 0.29f), *v);
+    }
+  }
 }
 
 FxParams parseFx(const std::string& text) {

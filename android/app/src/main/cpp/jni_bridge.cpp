@@ -65,6 +65,7 @@ JNIEXPORT jfloatArray JNICALL FN(nLevels)(JNIEnv* env, jobject, jlong h) {
   if (!peaks.empty()) env->SetFloatArrayRegion(a, 1, jsize(peaks.size()), peaks.data());
   return a;
 }
+JNIEXPORT jlong JNICALL FN(nInputClips)(JNIEnv*, jobject, jlong h) { return E(h)->takeInputClips(); }
 JNIEXPORT jdouble JNICALL FN(nLatencyMs)(JNIEnv*, jobject, jlong h) { return E(h)->latencyMillis(); }
 JNIEXPORT jstring JNICALL FN(nRenderOffline)(JNIEnv* env, jobject, jstring json, jstring out, jlong frames) {
   return jstr(env, pestana::renderOffline(str(env, json), str(env, out), frames));

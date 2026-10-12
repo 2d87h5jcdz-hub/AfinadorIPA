@@ -73,6 +73,10 @@ std::string StudioEngine::open(bool withInput, int inputDeviceId) {
     if (r != oboe::Result::OK) {
       mInput.reset();
     } else {
+      mInFifo.assign(size_t(kSampleRate), 0.0f);
+      mFifoHead = mFifoCount = 0;
+      mInPrimed = false;
+      mInTarget = std::max(256, mInput->getFramesPerBurst() * 2);
       mInput->requestStart();
     }
   }
@@ -196,6 +200,7 @@ std::string StudioEngine::start(int64_t fromFrame, int64_t leadIn, const std::st
 
 int64_t StudioEngine::stop() {
   const bool wasRecording = mRecording.exchange(false);
+  if (wasRecording) LOGI("gravação: %lld faltas de entrada", (long long)mInUnderruns.exchange(0));
   mState = Stopped;
   mSilenced = -1;
   if (mWriter.joinable()) {
@@ -243,6 +248,47 @@ std::vector<float> StudioEngine::trackPeaks() {
   return v;
 }
 
+void StudioEngine::pullInput(int n) {
+  const size_t cap = mInFifo.size();
+  if (mInput) {
+    float tmp[512];
+    for (int guard = 0; guard < 64; guard++) {
+      auto res = mInput->read(tmp, 512, 0);
+      if (!res || res.value() <= 0) break;
+      const int got = res.value();
+      for (int i = 0; i < got; i++) {
+        if (mFifoCount == cap) {  // cheia: descarta o mais antigo
+          mFifoHead = (mFifoHead + 1) % cap;
+          mFifoCount--;
+        }
+        mInFifo[(mFifoHead + mFifoCount) % cap] = tmp[i];
+        mFifoCount++;
+      }
+      if (got < 512) break;
+    }
+  }
+  // Atraso preso alto demais (a entrada adiantou): volta para o alvo.
+  if (mFifoCount > size_t(mInTarget) * 4 + size_t(n)) {
+    const size_t drop = mFifoCount - size_t(mInTarget) - size_t(n);
+    mFifoHead = (mFifoHead + drop) % cap;
+    mFifoCount -= drop;
+  }
+  if (!mInPrimed && mFifoCount >= size_t(mInTarget) + size_t(n)) mInPrimed = true;
+  if (!mInPrimed || !mInput) {
+    std::fill(mIn.begin(), mIn.begin() + n, 0.0f);
+    return;
+  }
+  const size_t take = std::min(size_t(n), mFifoCount);
+  for (size_t i = 0; i < take; i++) mIn[i] = mInFifo[(mFifoHead + i) % cap];
+  mFifoHead = (mFifoHead + take) % cap;
+  mFifoCount -= take;
+  if (take < size_t(n)) {
+    std::fill(mIn.begin() + long(take), mIn.begin() + n, 0.0f);
+    mInUnderruns.fetch_add(1);
+    mInPrimed = false;  // espera encher de novo
+  }
+}
+
 double StudioEngine::latencyMillis() {
   std::lock_guard<std::mutex> g(mStreamMutex);
   double total = 0;
@@ -253,6 +299,7 @@ double StudioEngine::latencyMillis() {
   if (mInput) {
     auto r = mInput->calculateLatencyMillis();
     total += r ? r.value() : 1000.0 * mInput->getFramesPerBurst() * 2 / kSampleRate + 10;
+    total += 1000.0 * mInTarget / kSampleRate;  // fila da entrada
   }
   return total;
 }
@@ -306,20 +353,19 @@ oboe::DataCallbackResult StudioEngine::onAudioReady(oboe::AudioStream*, void* au
   int done = 0;
   while (done < numFrames) {
     const int n = std::min(numFrames - done, kMaxBlock);
-    // Entrada (sem bloquear): o que não chegou vira silêncio.
-    int got = 0;
-    if (mInput) {
-      auto res = mInput->read(mIn.data(), n, 0);
-      if (res) got = res.value();
-    }
-    std::fill(mIn.begin() + got, mIn.begin() + n, 0.0f);
+    // Entrada: tudo o que chegou vai para a fila; tira exatamente n quadros dela.
+    pullInput(n);
     const float gain = mInputGain.load(std::memory_order_relaxed);
     float pk = mInputPeak.load(std::memory_order_relaxed);
+    int clips = 0;
     for (int i = 0; i < n; i++) {
       mIn[i] *= gain;
-      pk = std::max(pk, std::fabs(mIn[i]));
+      const float a = std::fabs(mIn[i]);
+      pk = std::max(pk, a);
+      if (a >= 0.98f) clips++;
     }
     mInputPeak.store(pk, std::memory_order_relaxed);
+    if (clips) mInputClips.fetch_add(clips, std::memory_order_relaxed);
 
     const int st = mState.load(std::memory_order_acquire);
     const int64_t sf = mSongFrame.load(std::memory_order_relaxed);
@@ -336,7 +382,12 @@ oboe::DataCallbackResult StudioEngine::onAudioReady(oboe::AudioStream*, void* au
       const int64_t rs = mRecordStart.load(std::memory_order_relaxed);
       const int64_t from = std::max<int64_t>(0, rs - sf);
       if (from < n) {
-        mRing.write(mIn.data() + from, size_t(n - from));
+        // Limitador suave: acima de −3 dB o pico é arredondado em vez de cortado (sem distorção dura).
+        for (int i = int(from); i < n; i++) {
+          const float x = mIn[i], a = std::fabs(x);
+          mRec[i] = a <= 0.7f ? x : std::copysign(0.7f + 0.29f * std::tanh((a - 0.7f) / 0.29f), x);
+        }
+        mRing.write(mRec.data() + from, size_t(n - from));
         mRecordedFrames.fetch_add(n - from, std::memory_order_relaxed);
         if (st == CountIn) mState.store(Recording, std::memory_order_release);
       }
