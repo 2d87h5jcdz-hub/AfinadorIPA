@@ -38,6 +38,7 @@ import com.pestana.estudio.ui.PIcons
 import com.pestana.estudio.ui.Palette
 import com.pestana.estudio.ui.Segmented
 import com.pestana.estudio.ui.Type
+import com.pestana.estudio.ui.panel
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -79,6 +80,7 @@ internal fun TrackSheet(studio: StudioEngine, track: StudioTrack, onDismiss: () 
                 Box(Modifier.weight(1f)) { PresetMenu(track.effects) { studio.updateTrack(track.copy(effects = it)) } }
                 SPillButton("Ajustar", PIcons.sliders, filled = false) { editFx = true }
             }
+            PitchPanel(studio, track)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SChip("Gravar nesta faixa", studio.armedTrackId == track.id, Palette.off, enabled = studio.transport == Transport.STOPPED) {
                     studio.arm(track.id)
@@ -143,7 +145,10 @@ internal fun EffectsSheet(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(title, style = Type.serif(22.sp), color = Palette.fg)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = Type.serif(22.sp), color = Palette.fg, modifier = Modifier.weight(1f))
+                SChip("Tirar todos", tint = Palette.off) { val n = EffectSettings(); e = n; onChange(n) }
+            }
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 EffectPreset.entries.filter { it != EffectPreset.CUSTOM }.forEach { pr ->
                     SChip(pr.title, e.preset == pr) {
@@ -168,7 +173,7 @@ internal fun EffectsSheet(
                 Segmented(DRIVE_STYLES.map { it.substringBefore(" ") }, e.driveStyle, { set(e.copy(driveStyle = it)) }, Modifier.fillMaxWidth())
                 SSlider("Quantidade", e.driveAmount, 0f..1f, "${(e.driveAmount * 100).roundToInt()}%") { set(e.copy(driveAmount = it)) }
             }
-            Section("Amplificador (NAM)", e.ampModel != null, { if (!it) set(e.copy(ampModel = null)) else amps.firstOrNull()?.let { a -> set(e.copy(ampModel = a)) } ?: ampPicker.launch(arrayOf("*/*")) }) {
+            Section("Amplificador (IA)", e.ampModel != null, { if (!it) set(e.copy(ampModel = null)) else amps.firstOrNull()?.let { a -> set(e.copy(ampModel = a)) } ?: ampPicker.launch(arrayOf("*/*")) }) {
                 var menu by remember { mutableStateOf(false) }
                 Box {
                     Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { menu = true }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -182,7 +187,7 @@ internal fun EffectsSheet(
                     }
                 }
                 Text(
-                    "Modelos .nam (Neural Amp Modeler) de amplificadores reais. Baixe em tone3000.com e importe aqui.",
+                    "Modelos .nam do Neural Amp Modeler imitam amplificadores e pedais reais. Baixe grátis em tone3000.com e importe aqui. Use com o drive desligado.",
                     style = Type.body(12.sp),
                     color = Palette.muted,
                 )
@@ -217,5 +222,87 @@ private fun Section(title: String, on: Boolean?, onToggle: ((Boolean) -> Unit)?,
             if (on != null && onToggle != null) SSwitch(on, onChange = onToggle)
         }
         if (on != false) content()
+    }
+}
+
+/** "Afinação automática" da faixa (correção sutil da voz, igual ao iOS). */
+@Composable
+private fun PitchPanel(studio: StudioEngine, track: StudioTrack) {
+    val pitch = track.pitch
+    val progress = studio.pitchProgress[track.id]
+    val set: (com.pestana.estudio.core.PitchSettings) -> Unit = { studio.updateTrack(track.copy(pitch = it)) }
+    if (!track.effectsOn && pitch.enabled) {
+        Row(
+            Modifier.fillMaxWidth().panel(radius = 12.dp, stroke = Palette.off.copy(alpha = 0.6f)).padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Os efeitos desta faixa estão desligados (botão FX).", style = Type.body(13.sp), color = Palette.fg, modifier = Modifier.weight(1f))
+            Text(
+                "Ligar",
+                style = Type.body(14.sp, FontWeight.Bold),
+                color = Palette.brass,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { studio.updateTrack(track.copy(effectsOn = true)) }.padding(6.dp),
+            )
+        }
+    }
+    SCard(padding = 12.dp) {
+        Row(
+            Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = track.clips.isNotEmpty() || pitch.enabled) {
+                set(pitch.copy(enabled = !pitch.enabled))
+            },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(PIcons.tuningFork, null, tint = Palette.brass, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.size(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Afinação automática", style = Type.body(15.sp, FontWeight.SemiBold), color = Palette.fg)
+                Text(
+                    "Sutil: leva cada nota para o lugar e mantém vibrato e expressão. A gravação original não muda.",
+                    style = Type.body(12.sp),
+                    color = Palette.muted,
+                )
+            }
+            SSwitch(pitch.enabled, enabled = track.clips.isNotEmpty() || pitch.enabled) { set(pitch.copy(enabled = it)) }
+        }
+        if (pitch.enabled) {
+            var menu by remember { mutableStateOf(false) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Tom", style = Type.body(13.sp), color = Palette.muted, modifier = Modifier.weight(1f))
+                Box {
+                    val label = if (pitch.isAuto) {
+                        pitch.detectedKey?.let { "Auto · " + com.pestana.estudio.core.PitchSettings.keyTitle(it, pitch.detectedScale ?: com.pestana.estudio.core.PitchScale.MAJOR) } ?: "Automático"
+                    } else com.pestana.estudio.core.PitchSettings.noteNames[pitch.key.coerceIn(0, 11)]
+                    Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable { menu = true }.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, style = Type.body(14.sp, FontWeight.SemiBold), color = Palette.brass)
+                        Icon(PIcons.chevronDown, null, tint = Palette.brass, modifier = Modifier.size(14.dp))
+                    }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Automático (pela voz)") }, onClick = { menu = false; set(pitch.copy(key = -1)) })
+                        com.pestana.estudio.core.PitchSettings.noteNames.forEachIndexed { k, name ->
+                            DropdownMenuItem(text = { Text(name) }, onClick = { menu = false; set(pitch.copy(key = k)) })
+                        }
+                    }
+                }
+            }
+            if (!pitch.isAuto) {
+                val scales = com.pestana.estudio.core.PitchScale.entries
+                Segmented(scales.map { it.title }, scales.indexOf(pitch.scale), { set(pitch.copy(scale = scales[it])) }, Modifier.fillMaxWidth())
+            }
+            SSlider("Intensidade", pitch.strength, 0.3f..1f, "${(pitch.strength * 100).roundToInt()}%") { set(pitch.copy(strength = (it * 100).roundToInt() / 100f)) }
+            Text("Mais baixo soa mais natural; 100% leva a nota exatamente para o lugar.", style = Type.body(11.sp), color = Palette.muted)
+            when {
+                progress != null -> {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { progress.toFloat() },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Palette.brass,
+                        trackColor = Palette.line,
+                    )
+                    Text("Afinando… ${(progress * 100).roundToInt()}% (dá para continuar usando o app)", style = Type.body(12.sp), color = Palette.muted)
+                }
+                pitch.signature != null -> Text("✓ Pronto: a reprodução e a exportação já usam a voz afinada.", style = Type.body(12.sp), color = Palette.ok)
+                else -> Text("Preparando…", style = Type.body(12.sp), color = Palette.muted)
+            }
+        }
     }
 }

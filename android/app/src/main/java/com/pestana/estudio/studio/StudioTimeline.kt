@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -66,6 +67,8 @@ internal fun TracksSection(studio: StudioEngine) {
     var pxPerSec by remember { mutableFloatStateOf(40f) } // dp por segundo
     var selected by remember { mutableStateOf<Pair<String, String>?>(null) } // (trackId, clipId)
     var editing by remember { mutableStateOf<String?>(null) }
+    var follow by remember { mutableStateOf(true) }
+    var confirmDelete by remember { mutableStateOf<Pair<String, String>?>(null) }
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) studio.importAudioAsync(uri)
     }
@@ -76,8 +79,14 @@ internal fun TracksSection(studio: StudioEngine) {
             Text("Faixas", style = Type.serif(20.sp), color = Palette.fg)
             Text("${p.tracks.size}", style = Type.mono(12.sp), color = Palette.muted)
             Spacer(Modifier.weight(1f))
-            SIconButton(PIcons.toEnd, "Fim da faixa armada", size = 38.dp, fill = Palette.brass, tint = Palette.bg, stroke = Palette.brass,
-                enabled = stopped && studio.armedTrackId != null) { studio.armedTrackId?.let { studio.seekToEnd(it) } }
+            SIconButton(
+                PIcons.toEnd,
+                if (follow) "Seguir a cabeça de reprodução: ligado" else "Seguir a cabeça de reprodução: desligado",
+                size = 38.dp,
+                fill = if (follow) Palette.brass else Palette.panel,
+                tint = if (follow) Palette.bg else Palette.fg,
+                stroke = if (follow) Palette.brass else Palette.line,
+            ) { follow = !follow }
             SIconButton(PIcons.zoomOut, "Menos zoom", size = 38.dp) { pxPerSec = (pxPerSec / 1.5f).coerceAtLeast(6f) }
             SIconButton(PIcons.zoomIn, "Mais zoom", size = 38.dp) { pxPerSec = (pxPerSec * 1.5f).coerceAtMost(400f) }
         }
@@ -86,13 +95,13 @@ internal fun TracksSection(studio: StudioEngine) {
             SCard {
                 Text("Nenhuma faixa ainda", style = Type.body(15.sp, FontWeight.SemiBold), color = Palette.fg)
                 Text(
-                    "Toque no botão vermelho para gravar (a faixa é criada sozinha), ou importe um áudio para tocar junto.",
+                    "Toque em “Nova faixa” e depois no botão vermelho para gravar, ou importe um áudio (uma base, uma guia) do celular.",
                     style = Type.body(13.sp),
                     color = Palette.muted,
                 )
             }
         } else {
-            Timeline(studio, p, pxPerSec, selected, onSelect = { selected = it }, onEdit = { editing = it })
+            Timeline(studio, p, pxPerSec, follow, selected, onSelect = { selected = it }, onEdit = { editing = it })
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -119,12 +128,15 @@ internal fun TracksSection(studio: StudioEngine) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SChip("Mover p/ cursor", enabled = stopped) { studio.moveClip(selClip.id, selTrack.id, studio.position) }
                     SChip("Fim da faixa", enabled = stopped) { studio.seekToEnd(selTrack.id) }
-                    SChip("Apagar trecho", tint = Palette.off, enabled = stopped) {
-                        studio.deleteClip(selClip.id, selTrack.id); selected = null
-                    }
+                    SChip("Apagar trecho", tint = Palette.off, enabled = stopped) { confirmDelete = selTrack.id to selClip.id }
                 }
-                Text("Dica: arraste o trecho para o lado para mudá-lo de lugar.", style = Type.body(11.sp), color = Palette.muted)
+                Text("Dica: segure o trecho e arraste para mover (gruda na batida).", style = Type.body(11.sp), color = Palette.muted)
             }
+        }
+    }
+    confirmDelete?.let { (tid, cid) ->
+        ConfirmDialog("Apagar trecho?", "O trecho sai da faixa. Não dá para desfazer.", "Apagar", { confirmDelete = null }) {
+            studio.deleteClip(cid, tid); selected = null; confirmDelete = null
         }
     }
     editing?.let { id ->
@@ -137,6 +149,7 @@ private fun Timeline(
     studio: StudioEngine,
     p: StudioProject,
     pxPerSec: Float,
+    follow: Boolean,
     selected: Pair<String, String>?,
     onSelect: (Pair<String, String>?) -> Unit,
     onEdit: (String) -> Unit,
@@ -149,8 +162,8 @@ private fun Timeline(
 
     // Acompanha a cabeça de reprodução enquanto toca/grava.
     val pos by rememberUpdatedState(studio.position)
-    LaunchedEffect(studio.transport, pxPerSec) {
-        if (studio.transport == Transport.STOPPED) return@LaunchedEffect
+    LaunchedEffect(studio.transport, pxPerSec, follow) {
+        if (studio.transport == Transport.STOPPED || !follow) return@LaunchedEffect
         while (true) {
             val x = (pos * pxPerSecPx).toInt()
             val view = scroll.viewportSize
@@ -165,7 +178,7 @@ private fun Timeline(
             Box(Modifier.height(RULER_H).padding(start = 8.dp), contentAlignment = Alignment.CenterStart) {
                 Text(formatClock(studio.position).let { it }, style = Type.mono(10.sp), color = Palette.muted)
             }
-            p.tracks.forEach { t -> TrackHeader(studio, t, onEdit) }
+            p.tracks.forEachIndexed { i, t -> TrackHeader(studio, t, i + 1, onEdit) }
         }
         Box(Modifier.width(1.dp).height(RULER_H + LANE_H * p.tracks.size).background(Palette.line))
         // Linha do tempo (rola na horizontal)
@@ -177,7 +190,7 @@ private fun Timeline(
 }
 
 @Composable
-private fun TrackHeader(studio: StudioEngine, t: StudioTrack, onEdit: (String) -> Unit) {
+private fun TrackHeader(studio: StudioEngine, t: StudioTrack, index: Int, onEdit: (String) -> Unit) {
     val armed = studio.armedTrackId == t.id
     val stopped = studio.transport == Transport.STOPPED
     Column(
@@ -193,7 +206,9 @@ private fun TrackHeader(studio: StudioEngine, t: StudioTrack, onEdit: (String) -
                     .background(if (armed) Palette.off else Palette.bg)
                     .clickable(enabled = stopped) { studio.arm(t.id) },
             )
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(5.dp))
+            Text("$index", style = Type.mono(10.sp), color = Palette.muted)
+            Spacer(Modifier.width(4.dp))
             Text(
                 t.name + " ›",
                 style = Type.serif(13.sp, FontWeight.Bold),
@@ -207,6 +222,7 @@ private fun TrackHeader(studio: StudioEngine, t: StudioTrack, onEdit: (String) -
             MiniToggle("M", t.isMuted, Palette.off) { studio.updateTrack(t.copy(isMuted = !t.isMuted)) }
             MiniToggle("S", t.isSolo, Palette.ok) { studio.updateTrack(t.copy(isSolo = !t.isSolo)) }
             if (t.hasEffects) MiniToggle("FX", t.effectsOn, Palette.brass) { studio.updateTrack(t.copy(effectsOn = !t.effectsOn)) }
+            else if (t.isImported) Text("IMP", style = Type.mono(9.sp, FontWeight.Bold), color = Palette.muted)
             LevelBar(studio.trackLevels[t.id] ?: 0f, Modifier.weight(1f))
         }
     }
@@ -236,6 +252,13 @@ private fun Ruler(p: StudioProject, pxPerSec: Float, widthDp: androidx.compose.u
             .height(RULER_H)
             .pointerInput(pxPerSec) {
                 detectTapGestures { o -> studio.seek((o.x / pxPerSec.dp.toPx()).toDouble()) }
+            }
+            .pointerInput(pxPerSec) {
+                // Deslizar o dedo na régua leva a cabeça junto.
+                detectHorizontalDragGestures { change, _ ->
+                    change.consume()
+                    studio.seek((change.position.x / pxPerSec.dp.toPx()).toDouble().coerceAtLeast(0.0))
+                }
             },
     ) {
         val pps = pxPerSec.dp.toPx()
@@ -305,7 +328,12 @@ private fun Lane(
                         val id = dragClip
                         if (id != null) {
                             val c = clips.firstOrNull { it.id == id }
-                            if (c != null) studio.moveClip(id, t.id, c.offset + dragDx / pxPerSec.dp.toPx())
+                            if (c != null) {
+                                // Gruda na batida mais próxima (como no iOS).
+                                val beat = 60.0 / max(20.0, p.bpm)
+                                val raw = c.offset + dragDx / pxPerSec.dp.toPx()
+                                studio.moveClip(id, t.id, max(0.0, Math.round(raw / beat) * beat))
+                            }
                         }
                         dragClip = null; dragDx = 0f
                     },

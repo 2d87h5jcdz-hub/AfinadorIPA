@@ -1,5 +1,7 @@
 package com.pestana.estudio.studio
 
+import com.pestana.estudio.core.PitchScale
+import com.pestana.estudio.core.PitchSettings
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -162,9 +164,11 @@ data class StudioTrack(
     val isImported: Boolean = false,
     val clips: List<StudioClip> = emptyList(),
     val effectsOn: Boolean = true,
+    /** Afinação automática (correção sutil da voz; o original não muda). */
+    val pitch: PitchSettings = PitchSettings(),
 ) {
     val end get() = clips.maxOfOrNull { it.end } ?: 0.0
-    val hasEffects get() = !effects.isNeutral
+    val hasEffects get() = !effects.isNeutral || pitch.enabled
 
     /** Id numérico para o motor nativo (estável enquanto o UUID não muda). */
     val nativeId: Long get() = UUID.fromString(id).mostSignificantBits
@@ -173,6 +177,7 @@ data class StudioTrack(
         put("id", id); put("name", name); put("volume", volume.toDouble()); put("pan", pan.toDouble())
         put("isMuted", isMuted); put("isSolo", isSolo); put("effects", effects.toJson())
         put("isImported", isImported); put("effectsOn", effectsOn)
+        put("pitch", pitchToJson(pitch))
         put("clips", JSONArray().apply { clips.forEach { put(it.toJson()) } })
     }
 
@@ -186,6 +191,7 @@ data class StudioTrack(
                 pan = o.optDouble("pan", 0.0).toFloat(), isMuted = o.optBoolean("isMuted"), isSolo = o.optBoolean("isSolo"),
                 effects = EffectSettings.fromJson(o.optJSONObject("effects")), isImported = o.optBoolean("isImported"),
                 clips = clips.sortedBy { it.offset }, effectsOn = o.optBoolean("effectsOn", true),
+                pitch = pitchFromJson(o.optJSONObject("pitch")),
             )
         }
     }
@@ -248,4 +254,28 @@ object StudioTimeline {
     }
 
     fun referencedFiles(p: StudioProject): Set<String> = p.tracks.flatMap { t -> t.clips.map { it.fileName } }.toSet()
+}
+
+fun pitchToJson(p: PitchSettings): JSONObject = JSONObject().apply {
+    put("enabled", p.enabled); put("key", p.key); put("scale", p.scale.key); put("strength", p.strength.toDouble())
+    p.detectedKey?.let { put("detectedKey", it) }
+    p.detectedScale?.let { put("detectedScale", it.key) }
+}
+
+fun pitchFromJson(o: JSONObject?): PitchSettings {
+    if (o == null) return PitchSettings()
+    return PitchSettings(
+        enabled = o.optBoolean("enabled", false),
+        key = o.optInt("key", -1),
+        scale = PitchScale.byKey(o.optString("scale", "major")),
+        strength = o.optDouble("strength", 0.8).toFloat(),
+        detectedKey = if (o.has("detectedKey")) o.getInt("detectedKey") else null,
+        detectedScale = if (o.has("detectedScale")) PitchScale.byKey(o.getString("detectedScale")) else null,
+    )
+}
+
+/** Arquivos afinados: "<arquivo>.tune-<assinatura>.pcm" na pasta do projeto (o original nunca muda). */
+object PitchFiles {
+    fun tunedName(source: String, signature: String) = "$source.tune-$signature.pcm"
+    fun prefix(source: String) = "$source.tune-"
 }

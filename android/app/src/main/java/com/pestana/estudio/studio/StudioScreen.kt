@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -138,6 +140,7 @@ fun StudioScreen(studio: StudioEngine) {
 private fun ProjectList(studio: StudioEngine) {
     var renaming by remember { mutableStateOf<StudioProject?>(null) }
     var deleting by remember { mutableStateOf<StudioProject?>(null) }
+    var creating by remember { mutableStateOf(false) }
     val fmt = remember { SimpleDateFormat("d MMM yyyy, HH:mm", Locale.forLanguageTag("pt-BR")) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
@@ -145,7 +148,7 @@ private fun ProjectList(studio: StudioEngine) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Estúdio", style = Type.serif(26.sp), color = Palette.fg, modifier = Modifier.weight(1f))
-            SPillButton("Nova música", PIcons.plus, filled = true) { studio.newProject("") }
+            SPillButton("Nova música", PIcons.plus, filled = true) { creating = true }
         }
         if (!studio.available) {
             SCard { Text("O motor de áudio do Estúdio não carregou neste aparelho.", style = Type.body(14.sp), color = Palette.off) }
@@ -153,13 +156,31 @@ private fun ProjectList(studio: StudioEngine) {
         if (studio.projects.isEmpty()) {
             SCard {
                 Icon(PIcons.waveform, null, tint = Palette.brass, modifier = Modifier.size(28.dp))
-                Text("Grave em camadas", style = Type.body(16.sp, FontWeight.SemiBold), color = Palette.fg)
+                Text("Grave em camadas", style = Type.serif(18.sp, FontWeight.Bold), color = Palette.fg)
                 Text(
-                    "Crie uma música, grave o violão, depois a voz por cima, com metrônomo, efeitos e retorno no fone. " +
-                        "No fim, exporte e mande para quem quiser.",
+                    "Grave o violão, depois ouça essa faixa enquanto grava a voz por cima, depois um solo… " +
+                        "Cada gravação vira uma camada que você mixa do seu jeito.",
                     style = Type.body(13.sp),
                     color = Palette.muted,
                 )
+                listOf(
+                    "1" to "Crie uma música e escolha o BPM — o clique ajuda a manter o tempo.",
+                    "2" to "Toque em gravar. As faixas que já existem tocam enquanto você grava a próxima.",
+                    "3" to "Ajuste volume, pan e efeitos de cada faixa.",
+                    "4" to "Exporte e mande pelo WhatsApp ou salve no celular.",
+                ).forEach { (n, t) ->
+                    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.size(22.dp).panel(shape = CircleShape, fill = Palette.bg, stroke = Palette.brass), contentAlignment = Alignment.Center) {
+                            Text(n, style = Type.mono(11.sp, FontWeight.Bold), color = Palette.brass)
+                        }
+                        Text(t, style = Type.body(13.sp), color = Palette.fg)
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(PIcons.headphones, null, tint = Palette.brass, modifier = Modifier.size(18.dp))
+                    Text("Use fone de ouvido: assim o som das outras faixas não vaza para a nova gravação.", style = Type.body(12.sp), color = Palette.muted)
+                }
+                SPillButton("Criar primeira música", PIcons.plus, filled = true) { creating = true }
             }
         }
         studio.projects.forEach { p ->
@@ -195,6 +216,13 @@ private fun ProjectList(studio: StudioEngine) {
         }
     }
     renaming?.let { p -> NameDialog("Renomear música", p.name, { renaming = null }) { studio.rename(p.id, it); renaming = null } }
+    if (creating) {
+        NameDialog("Nova música", "Música ${studio.projects.size + 1}", { creating = false }, action = "Criar",
+            hint = "Dê um nome para o projeto. Dá para mudar depois.") {
+            creating = false
+            studio.newProject(it.trim())
+        }
+    }
     deleting?.let { p ->
         ConfirmDialog("Apagar música?", "\"${p.name}\" e todas as gravações serão apagadas do celular.", "Apagar", { deleting = null }) {
             studio.deleteProject(p.id); deleting = null
@@ -203,12 +231,21 @@ private fun ProjectList(studio: StudioEngine) {
 }
 
 @Composable
-internal fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+internal fun NameDialog(
+    title: String,
+    initial: String,
+    onDismiss: () -> Unit,
+    action: String = "Salvar",
+    hint: String? = null,
+    onSave: (String) -> Unit,
+) {
     var text by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, style = Type.serif(20.sp, FontWeight.Bold)) },
         text = {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (hint != null) Text(hint, style = Type.body(14.sp), color = Palette.muted)
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
@@ -218,8 +255,9 @@ internal fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, o
                     focusedTextColor = Palette.fg, unfocusedTextColor = Palette.fg,
                 ),
             )
+          }
         },
-        confirmButton = { TextButton(onClick = { onSave(text) }) { Text("Salvar", color = Palette.brass) } },
+        confirmButton = { TextButton(onClick = { onSave(text) }) { Text(action, color = Palette.brass) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar", color = Palette.muted) } },
         containerColor = Palette.panel,
         titleContentColor = Palette.fg,
@@ -277,6 +315,8 @@ private fun ProjectScreen(studio: StudioEngine, onRecord: () -> Unit, askMic: ()
                     InputCard(studio, askMic)
                     TracksSection(studio)
                 }
+                val armed = studio.transport == Transport.RECORDING || studio.transport == Transport.COUNT_IN
+                Box(Modifier.fillMaxWidth().height(1.dp).background(if (armed) Palette.off else Palette.line))
                 Box(Modifier.fillMaxWidth().background(Palette.panel).padding(horizontal = 16.dp, vertical = 10.dp)) {
                     TransportBar(studio, onRecord)
                 }
@@ -410,7 +450,15 @@ private fun InputCard(studio: StudioEngine, askMic: () -> Unit) {
             if (!studio.hasMicPermission()) {
                 SPillButton("Permitir microfone", PIcons.mic, filled = true, onClick = askMic)
             }
+            InputPicker(studio)
             SSlider("Ganho", studio.inputGainDb, -12f..24f, "%+.0f dB".format(studio.inputGainDb)) { studio.changeInputGain(it) }
+            if (studio.monitorEnabled && !studio.headphones) {
+                Text(
+                    "Conecte um fone de ouvido. Sem fone, o som do alto-falante volta para o microfone e pode dar microfonia.",
+                    style = Type.body(12.sp),
+                    color = Palette.off,
+                )
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Ouvir a entrada", style = Type.body(14.sp), color = Palette.fg)
@@ -443,6 +491,33 @@ private fun InputCard(studio: StudioEngine, askMic: () -> Unit) {
     }
     if (editFx) EffectsSheet("Efeito da entrada", studio.monitorEffects, studio, { editFx = false }) { studio.changeMonitorEffects(it) }
     if (latency) LatencyDialog(studio) { latency = false }
+}
+
+@Composable
+private fun InputPicker(studio: StudioEngine) {
+    var open by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { studio.updateRoute() }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Entrada", style = Type.body(14.sp), color = Palette.fg, modifier = Modifier.weight(1f))
+        Box {
+            Row(
+                Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = studio.transport == Transport.STOPPED) { studio.updateRoute(); open = true }.padding(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(studio.inputName, style = Type.body(14.sp, FontWeight.SemiBold), color = Palette.brass, maxLines = 1)
+                Icon(PIcons.chevronDown, null, tint = Palette.brass, modifier = Modifier.size(14.dp))
+            }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                studio.inputs.forEach { opt ->
+                    DropdownMenuItem(
+                        text = { Text(opt.name, color = if (opt.id == studio.selectedInputId) Palette.brass else Palette.fg) },
+                        onClick = { open = false; studio.selectInput(opt.id) },
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -523,21 +598,50 @@ private fun TransportBar(studio: StudioEngine, onRecord: () -> Unit) {
                 modifier = Modifier.panel(shape = RoundedCornerShape(50), fill = Palette.bg, stroke = color).padding(horizontal = 10.dp, vertical = 4.dp),
             )
         }
-        Slider(
-            value = (drag ?: studio.position.toFloat()).coerceIn(0f, total.toFloat()),
-            onValueChange = { drag = it },
-            onValueChangeFinished = { drag?.let { studio.seek(it.toDouble()) }; drag = null },
-            valueRange = 0f..total.toFloat(),
-            enabled = !busyTransport,
-            colors = sSliderColors(),
-        )
-        val beatLen = 60.0 / maxOf(20.0, p.bpm)
-        val beatIdx = Math.floor(studio.position / beatLen).toLong()
-        val armedName = p.tracks.firstOrNull { it.id == studio.armedTrackId }?.name
-        Row {
-            Text("compasso ${beatIdx / p.beatsPerBar + 1} · tempo ${beatIdx % p.beatsPerBar + 1}", style = Type.mono(11.sp), color = Palette.muted)
-            Spacer(Modifier.weight(1f))
-            Text(if (armedName != null) "● Gravar em $armedName" else "● Gravar em nova faixa", style = Type.mono(11.sp), color = Palette.off, maxLines = 1)
+        if (t == Transport.COUNT_IN) {
+            Row(Modifier.height(64.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("${studio.countInBeat}", style = Type.serif(54.sp), color = Palette.brass, modifier = Modifier.width(50.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Prepare-se…", style = Type.body(15.sp, FontWeight.SemiBold), color = Palette.fg)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (i in 1..maxOf(1, p.beatsPerBar)) {
+                            Box(
+                                Modifier.size(16.dp).panel(
+                                    shape = CircleShape,
+                                    fill = if (i == studio.countInBeat) (if (i == 1) Palette.ok else Palette.brass) else Palette.bg,
+                                    stroke = if (i == 1) Palette.brass else Palette.line,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            Slider(
+                value = (drag ?: studio.position.toFloat()).coerceIn(0f, total.toFloat()),
+                onValueChange = { drag = it },
+                onValueChangeFinished = { drag?.let { studio.seek(it.toDouble()) }; drag = null },
+                valueRange = 0f..total.toFloat(),
+                enabled = !busyTransport,
+                colors = sSliderColors(),
+            )
+            val beatLen = 60.0 / maxOf(20.0, p.bpm)
+            val beatIdx = Math.floor((drag?.toDouble() ?: studio.position) / beatLen).toLong()
+            val armedName = p.tracks.firstOrNull { it.id == studio.armedTrackId }?.name
+            Row {
+                Text("compasso ${beatIdx / p.beatsPerBar + 1} · tempo ${beatIdx % p.beatsPerBar + 1}", style = Type.mono(11.sp), color = Palette.muted)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    when {
+                        t == Transport.RECORDING -> "● Gravando em ${armedName ?: "…"}"
+                        armedName != null -> "● Gravar em $armedName"
+                        else -> "● Gravar em nova faixa"
+                    },
+                    style = Type.mono(11.sp),
+                    color = Palette.off,
+                    maxLines = 1,
+                )
+            }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SIconButton(PIcons.toStart, "Voltar ao início", enabled = !busyTransport) { studio.seek(0.0) }

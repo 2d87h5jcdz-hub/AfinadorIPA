@@ -143,9 +143,24 @@ if wait_text "MÚSICA ORIGINAL" 60; then
       shot 15-treino-instrumentos-2 1
       echo "::notice title=Separação::Concluída no emulador"
       # --- Estúdio: usa os stems como base, grava 4 s por cima, toca e exporta
+      tap_text "Tudo"; sleep 1
       scroll_down; scroll_down
       if tap_text "Usar como base no Estúdio" && wait_text "Faixas" 120; then
         sleep 3; shot 17-estudio-base 1
+        # Afinação automática na faixa de voz
+        if tap_text "Voz ›"; then
+          sleep 2; scroll_down
+          tap_text "Afinação automática"
+          if wait_text "✓ Pronto: a reprodução e a exportação já usam a voz afinada." 180; then
+            shot 17b-estudio-afinacao 1
+            echo "::notice title=Afinação::Voz afinada no emulador"
+          else
+            shot 17b-estudio-afinacao-falhou 1
+            echo "::error title=Afinação::Não terminou no emulador"
+            FAIL=1
+          fi
+          adb shell input keyevent KEYCODE_BACK; sleep 2
+        fi
         tap_text "Gravar"; sleep 8
         shot 18-estudio-gravando 0
         tap_text "Parar gravação"; sleep 3

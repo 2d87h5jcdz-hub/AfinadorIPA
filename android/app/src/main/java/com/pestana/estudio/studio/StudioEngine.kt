@@ -18,6 +18,9 @@ import androidx.core.content.ContextCompat
 import com.pestana.estudio.audio.AacEncoder
 import com.pestana.estudio.audio.AudioDecoder
 import com.pestana.estudio.audio.PcmFile
+import com.pestana.estudio.core.PitchDsp
+import com.pestana.estudio.core.PitchScale
+import com.pestana.estudio.core.PitchSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -116,7 +119,7 @@ class StudioEngine(context: Context) {
         active = true
         // Microfone só com uma música aberta (na lista de músicas basta a saída).
         val withInput = hasMicPermission() && project != null
-        n.open(withInput)?.let { if (withInput) lastError = "Áudio: $it" }
+        n.open(withInput, inputDeviceId())?.let { if (withInput) lastError = "Áudio: $it" }
         n.setInputGain(inputGainDb)
         n.setMonitor(monitorEnabled, monitorEffects.toJson(ampPath(monitorEffects)).toString())
         project?.let { pushSong(it); n.setClick(it.bpm, it.beatsPerBar, clickEnabled) }
@@ -136,25 +139,90 @@ class StudioEngine(context: Context) {
 
     /** Microfone acabou de ser liberado: reabre em duplex. */
     fun micGranted() {
-        if (active && project != null) native?.open(true)
+        if (active && project != null) native?.open(true, inputDeviceId())
         updateRoute()
     }
 
-    private fun updateRoute() {
+    /** Uma entrada de áudio disponível (microfone do celular, fone, interface USB…). */
+    data class InputOption(val id: Int, val name: String, val type: Int)
+
+    var inputs by mutableStateOf<List<InputOption>>(emptyList())
+        private set
+    var selectedInputId by mutableIntStateOf(0)
+        private set
+
+    private fun inputTitle(d: AudioDeviceInfo): String = when (d.type) {
+        AudioDeviceInfo.TYPE_BUILTIN_MIC -> "Microfone do celular"
+        AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Microfone do fone"
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "${d.productName} (Bluetooth)"
+        AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET ->
+            d.productName?.toString()?.takeIf { it.isNotBlank() } ?: "Interface USB"
+        else -> d.productName?.toString()?.takeIf { it.isNotBlank() } ?: "Entrada"
+    }
+
+    private fun scanInputs(): List<InputOption> {
         val am = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val inputs = am.getDevices(AudioManager.GET_DEVICES_INPUTS)
-        val outputs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        val ext = inputs.firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
-                it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET
-        }
-        inputName = ext?.productName?.toString()?.takeIf { it.isNotBlank() }
-            ?: if (ext != null) "Entrada externa" else "Microfone do celular"
-        headphones = outputs.any {
+        val wanted = setOf(
+            AudioDeviceInfo.TYPE_BUILTIN_MIC, AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE,
+            AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        )
+        // Um item por tipo (o celular costuma listar vários microfones internos).
+        return am.getDevices(AudioManager.GET_DEVICES_INPUTS).filter { it.type in wanted }
+            .distinctBy { it.type }.map { InputOption(it.id, inputTitle(it), it.type) }
+    }
+
+    /**
+     * Entrada a usar: a escolha salva (pelo tipo); sem escolha, interface USB se houver, senão o
+     * microfone do celular (ao plugar um fone, o Android trocaria para o microfone do fone, longe do violão).
+     */
+    private fun inputDeviceId(): Int {
+        val list = inputs.ifEmpty { scanInputs() }
+        val saved = prefs.getInt("studioInputType", -1)
+        val target = list.firstOrNull { it.type == saved }
+            ?: list.firstOrNull { it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET }
+            ?: list.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
+        return target?.id ?: 0
+    }
+
+    /** Troca a entrada (só parado). A escolha fica salva pelo tipo de entrada. */
+    fun selectInput(id: Int) {
+        if (transport != Transport.STOPPED) return
+        val opt = inputs.firstOrNull { it.id == id } ?: return
+        prefs.edit().putInt("studioInputType", opt.type).apply()
+        if (active && project != null && hasMicPermission()) native?.open(true, id)
+        updateRoute()
+    }
+
+    fun updateRoute() {
+        val am = app.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        inputs = scanInputs()
+        val id = inputDeviceId()
+        selectedInputId = id
+        inputName = inputs.firstOrNull { it.id == id }?.name ?: "Microfone do celular"
+        headphones = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
             it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES || it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
                 it.type == AudioDeviceInfo.TYPE_USB_HEADSET || it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                it.type == AudioDeviceInfo.TYPE_USB_DEVICE
+                it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
         }
+    }
+
+    /** Fone/interface plugados ou desplugados enquanto a aba está aberta. */
+    private val deviceCallback = object : android.media.AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>?) = routeChanged()
+        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>?) = routeChanged()
+    }
+
+    private fun routeChanged() {
+        val before = selectedInputId
+        updateRoute()
+        if (active && transport == Transport.STOPPED && project != null && hasMicPermission() && selectedInputId != before) {
+            native?.open(true, selectedInputId)
+        }
+    }
+
+    init {
+        (app.getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+            .registerAudioDeviceCallback(deviceCallback, android.os.Handler(android.os.Looper.getMainLooper()))
     }
 
     // MARK: projetos
@@ -179,13 +247,16 @@ class StudioEngine(context: Context) {
         armedTrackId = null
         pushSong(p)
         native?.setClick(p.bpm, p.beatsPerBar, clickEnabled)
-        if (active) native?.open(hasMicPermission())
+        if (active) native?.open(hasMicPermission(), inputDeviceId())
+        pitchFailed.clear()
+        schedulePitchRefresh()
         scope.launch(Dispatchers.IO) { p.tracks.flatMap { it.clips }.forEach { Waveforms.compute(store.file(p.id, it.fileName)) } }
     }
 
     fun closeProject() {
         stopForSwitch()
         project = null
+        refreshPitch()
         native?.setSong("""{"tracks":[]}""")
         if (active) native?.open(false)
         inputLevel = 0f
@@ -215,7 +286,139 @@ class StudioEngine(context: Context) {
         project = p
         projects = listOf(p) + projects.filter { it.id != p.id }
         scope.launch(Dispatchers.IO) { store.save(p) }
-        if (structural) pushSong(p)
+        if (structural || p.tracks.map { it.pitch to it.effectsOn } != old.tracks.map { it.pitch to it.effectsOn }) pushSong(p)
+        schedulePitchRefresh()
+    }
+
+    // MARK: afinação automática
+
+    /** Faixa → progresso 0…1 do trabalho em andamento. */
+    val pitchProgress = mutableStateMapOf<String, Double>()
+    private val pitchJobs = mutableMapOf<String, Pair<String, Job>>()
+    private val pitchFailed = mutableSetOf<String>()
+    private var pitchRefresh: Job? = null
+
+    private fun schedulePitchRefresh() {
+        pitchRefresh?.cancel()
+        pitchRefresh = scope.launch {
+            delay(700) // a intensidade muda muitas vezes seguidas no slider
+            refreshPitch()
+        }
+    }
+
+    private fun tunedReady(p: StudioProject, t: StudioTrack): Boolean {
+        val sig = t.pitch.signature ?: return false
+        return t.clips.map { it.fileName }.toSet().all { store.file(p.id, PitchFiles.tunedName(it, sig)).exists() }
+    }
+
+    private fun refreshPitch() {
+        val p = project
+        if (p == null) {
+            pitchJobs.values.forEach { it.second.cancel() }
+            pitchJobs.clear(); pitchProgress.clear()
+            return
+        }
+        val wanted = mutableSetOf<String>()
+        for (t in p.tracks) {
+            if (!t.pitch.enabled || t.clips.isEmpty()) continue
+            val sources = t.clips.map { it.fileName }.toSet().sorted()
+            val jobKey = (t.pitch.signature ?: "detect|${t.pitch.strength}") + "|" + sources.joinToString(",")
+            if (t.pitch.signature != null && tunedReady(p, t)) continue
+            if (jobKey in pitchFailed) continue
+            wanted += t.id
+            if (pitchJobs[t.id]?.first == jobKey) continue
+            pitchJobs[t.id]?.second?.cancel()
+            startPitchJob(p.id, t.id, sources, t.pitch, jobKey)
+        }
+        for (id in pitchJobs.keys.toList()) if (id !in wanted) {
+            pitchJobs.remove(id)?.second?.cancel()
+            pitchProgress.remove(id)
+        }
+    }
+
+    private fun startPitchJob(projectId: String, trackId: String, sources: List<String>, settings: PitchSettings, jobKey: String) {
+        pitchProgress[trackId] = 0.0
+        val job = scope.launch {
+            val outcome = withContext(Dispatchers.Default) {
+                runPitchJob(projectId, sources, settings) { v -> scope.launch { if (pitchJobs[trackId]?.first == jobKey) pitchProgress[trackId] = v } }
+            }
+            if (pitchJobs[trackId]?.first != jobKey) return@launch
+            pitchJobs.remove(trackId)
+            pitchProgress.remove(trackId)
+            val p = project ?: return@launch
+            val t = p.tracks.firstOrNull { it.id == trackId } ?: return@launch
+            if (outcome.noVoice) {
+                pitchFailed += jobKey
+                lastError = "Não encontrei voz suficiente em \"${t.name}\" para descobrir o tom. Escolha o tom à mão."
+                return@launch
+            }
+            if (outcome.detectedKey != null && t.pitch.isAuto) {
+                update { pr -> pr.copy(tracks = pr.tracks.map { x ->
+                    if (x.id == trackId) x.copy(pitch = x.pitch.copy(detectedKey = outcome.detectedKey, detectedScale = outcome.detectedScale)) else x
+                }) }
+            }
+            if (outcome.completed) project?.let { pushSong(it) }
+        }
+        pitchJobs[trackId] = jobKey to job
+    }
+
+    private class PitchOutcome(val detectedKey: Int? = null, val detectedScale: PitchScale? = null, val completed: Boolean = false, val noVoice: Boolean = false)
+
+    private suspend fun runPitchJob(projectId: String, sources: List<String>, settings: PitchSettings, progress: (Double) -> Unit): PitchOutcome {
+        val ctx = kotlin.coroutines.coroutineContext
+        val cache = mutableMapOf<String, PitchDsp.Analysis>()
+        var key = settings.resolvedKey
+        var scale = settings.resolvedScale
+        var detected: Pair<Int, PitchScale>? = null
+        if (key == null) {
+            val all = ArrayList<Float>()
+            sources.forEachIndexed { i, src ->
+                if (!ctx.isActive) return PitchOutcome()
+                val audio = readPcm(store.file(projectId, src)) ?: return@forEachIndexed
+                val mono = FloatArray(audio[0].size) { k -> (audio[0][k] + audio[1][k]) * 0.5f }
+                val an = PitchDsp.analyze(mono, STUDIO_RATE.toDouble())
+                cache[src] = an
+                an.midi.forEach { all.add(it) }
+                progress(0.4 * (i + 1) / sources.size)
+            }
+            val found = PitchDsp.detectKey(all.toFloatArray()) ?: return PitchOutcome(noVoice = true)
+            key = found.first; scale = found.second; detected = found
+        }
+        val k: Int = key ?: return PitchOutcome()
+        val sc: PitchScale = scale
+        val sig = settings.copy(key = k, scale = sc).signature ?: return PitchOutcome()
+        val base = if (settings.resolvedKey == null) 0.4 else 0.0
+        sources.forEachIndexed { i, src ->
+            if (!ctx.isActive) return PitchOutcome(detected?.first, detected?.second)
+            val dest = store.file(projectId, PitchFiles.tunedName(src, sig))
+            if (!dest.exists()) {
+                val audio = readPcm(store.file(projectId, src))
+                if (audio != null) {
+                    val out = PitchDsp.process(audio, STUDIO_RATE.toDouble(), k, sc, settings.strength, cache[src])
+                    if (!ctx.isActive) return PitchOutcome(detected?.first, detected?.second)
+                    val tmp = File(dest.parentFile, dest.name + ".part")
+                    com.pestana.estudio.audio.PcmWriter(tmp).use { it.write(out[0], out[1], out[0].size) }
+                    tmp.renameTo(dest)
+                }
+            }
+            // apaga versões afinadas antigas (outra assinatura)
+            store.folder(projectId).listFiles()?.forEach { f ->
+                if (f.name.startsWith(PitchFiles.prefix(src)) && f.name != dest.name) f.delete()
+            }
+            progress(base + (1 - base) * (i + 1) / sources.size)
+        }
+        return PitchOutcome(detected?.first, detected?.second, completed = ctx.isActive)
+    }
+
+    /** Lê um .pcm do Estúdio (16 bits estéreo) em dois canais float. */
+    private fun readPcm(f: File): Array<FloatArray>? {
+        if (!f.exists() || f.length() < 4) return null
+        return PcmFile(f, STUDIO_RATE).use { pcm ->
+            val n = pcm.frames.toInt()
+            val l = FloatArray(n); val r = FloatArray(n)
+            pcm.read(0, n, l, r)
+            arrayOf(l, r)
+        }
     }
 
     // MARK: motor (disposição)
@@ -226,9 +429,12 @@ class StudioEngine(context: Context) {
         val tracks = JSONArray()
         for (t in p.tracks) {
             val clips = JSONArray()
+            val sig = if (t.effectsOn) t.pitch.signature else null
             for (c in t.clips) {
+                // Afinação automática pronta? Toca a cópia afinada.
+                val tuned = sig?.let { store.file(p.id, PitchFiles.tunedName(c.fileName, it)) }?.takeIf { it.exists() }
                 clips.put(
-                    JSONObject().put("path", store.file(p.id, c.fileName).path)
+                    JSONObject().put("path", (tuned ?: store.file(p.id, c.fileName)).path)
                         .put("offset", (c.offset * STUDIO_RATE).roundToLong())
                         .put("fileStart", (c.fileStart * STUDIO_RATE).roundToLong())
                         .put("duration", (c.duration * STUDIO_RATE).roundToLong()),
@@ -310,7 +516,7 @@ class StudioEngine(context: Context) {
         if (!hasMicPermission()) { lastError = "Libere o microfone para gravar."; return }
         if (!active) activate()
         if (!n.hasInput()) {
-            n.open(true)
+            n.open(true, inputDeviceId())
             if (!n.hasInput()) { lastError = "Não consegui abrir o microfone."; return }
         }
         if (transport == Transport.PLAYING) { n.stop(); transport = Transport.STOPPED }

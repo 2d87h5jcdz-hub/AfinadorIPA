@@ -25,7 +25,7 @@ class StudioEngine : public oboe::AudioStreamDataCallback, public oboe::AudioStr
   ~StudioEngine() override;
 
   /// Abre os streams. withInput = microfone liberado. Devolve "" ou a mensagem de erro.
-  std::string open(bool withInput);
+  std::string open(bool withInput, int inputDeviceId = 0);
   void close();
   bool isOpen() const { return mOutput != nullptr; }
   bool hasInput() const { return mInput != nullptr; }
@@ -62,6 +62,7 @@ class StudioEngine : public oboe::AudioStreamDataCallback, public oboe::AudioStr
 
   std::shared_ptr<oboe::AudioStream> mOutput, mInput;
   bool mWantInput = false;
+  int mInputDevice = 0;
   std::mutex mStreamMutex;
 
   // Disposição: trocada pela UI; o callback pega com try_lock (nunca espera).

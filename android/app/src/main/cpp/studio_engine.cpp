@@ -24,15 +24,16 @@ StudioEngine::~StudioEngine() {
   close();
 }
 
-std::string StudioEngine::open(bool withInput) {
+std::string StudioEngine::open(bool withInput, int inputDeviceId) {
   std::lock_guard<std::mutex> g(mStreamMutex);
   if (mOutput) {
-    if (withInput == (mInput != nullptr)) return "";
+    if (withInput == (mInput != nullptr) && inputDeviceId == mInputDevice) return "";
     // Muda de "só saída" para duplex (ou o contrário): reabre.
     if (mInput) { mInput->stop(); mInput->close(); mInput.reset(); }
     mOutput->stop(); mOutput->close(); mOutput.reset();
   }
   mWantInput = withInput;
+  mInputDevice = inputDeviceId;
   oboe::AudioStreamBuilder ob;
   ob.setDirection(oboe::Direction::Output)
       ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
@@ -63,6 +64,7 @@ std::string StudioEngine::open(bool withInput) {
         ->setSampleRate(kSampleRate)
         ->setSampleRateConversionQuality(oboe::SampleRateConversionQuality::Medium)
         ->setInputPreset(oboe::InputPreset::Unprocessed);
+    if (inputDeviceId > 0) ib.setDeviceId(inputDeviceId);
     r = ib.openStream(mInput);
     if (r != oboe::Result::OK) {
       ib.setInputPreset(oboe::InputPreset::VoiceRecognition);
@@ -96,14 +98,15 @@ void StudioEngine::onErrorAfterClose(oboe::AudioStream*, oboe::Result error) {
   // Fone conectado/desconectado, outro app pegou o áudio…: reabre num thread à parte.
   LOGI("stream caiu (%s), reabrindo", oboe::convertToText(error));
   const bool withInput = mWantInput;
-  std::thread([this, withInput] {
+  const int device = mInputDevice;
+  std::thread([this, withInput, device] {
     {
       std::lock_guard<std::mutex> g(mStreamMutex);
       if (mInput) { mInput->close(); mInput.reset(); }
       mOutput.reset();
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(150));
-    open(withInput);
+    open(withInput, device);
   }).detach();
 }
 

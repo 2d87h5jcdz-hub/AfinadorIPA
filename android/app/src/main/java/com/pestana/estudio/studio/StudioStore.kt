@@ -40,6 +40,8 @@ class StudioStore(filesDir: File) {
         for (name in candidates) if (name.isNotEmpty() && name !in used) {
             file(p.id, name).delete()
             Waveforms.forget(file(p.id, name))
+            // cópias afinadas desse arquivo
+            folder(p.id).listFiles()?.forEach { f -> if (f.name.startsWith(PitchFiles.prefix(name))) f.delete() }
         }
     }
 }
