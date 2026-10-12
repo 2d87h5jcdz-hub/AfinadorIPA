@@ -245,4 +245,8 @@ O amplificador usa o [NeuralAmpModelerCore](https://github.com/sdatkinson/Neural
 
 ## Licença
 
-Código sob a [licença MIT](LICENSE). Os componentes de terceiros estão em [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+O Pestana Estúdio é **gratuito e não pode ser vendido**. O código está sob a **[PolyForm Noncommercial 1.0.0](LICENSE)**: você pode ver, estudar, modificar e compartilhar o código para fins **não comerciais** (uso pessoal, estudo, igrejas, escolas, projetos sem fins lucrativos). **Vender o app, cobrar por ele ou usá-lo comercialmente não é permitido.**
+
+O nome **"Pestana Estúdio"** e o logo não fazem parte da licença: versões modificadas precisam usar outro nome e outro ícone.
+
+Os componentes de terceiros mantêm as licenças originais; veja [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
