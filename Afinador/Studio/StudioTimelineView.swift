@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 /// Clip selecionado na linha do tempo.
@@ -8,7 +9,33 @@ struct StudioClipSelection: Equatable {
 }
 
 /// Guarda o deslocamento atual da rolagem sem disparar redesenho (não é observado).
-final class StudioTimelineScrollBox {
+final class StudioTimelineScrollBox: NSObject {
+    /// A UIScrollView de verdade por trás do ScrollView horizontal (achada pela hierarquia de views).
+    /// Com ela a rolagem automática mexe direto no contentOffset, sem depender de scrollTo.
+    weak var scrollView: UIScrollView?
+    private var displayLink: CADisplayLink?
+    var onFrame: (() -> Void)?
+
+    /// Chama `onFrame` a cada quadro da tela (inclusive com o dedo encostado: modo .common).
+    func startFrames() {
+        guard displayLink == nil else { return }
+        let link = CADisplayLink(target: self, selector: #selector(frameTick))
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+
+    func stopFrames() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    var isRunningFrames: Bool { displayLink != nil }
+
+    @objc private func frameTick() {
+        onFrame?()
+    }
+
+
     var offset: CGFloat = 0
     var visibleWidth: CGFloat = 0
     /// Ponto que fica parado na tela durante o zoom: (tempo, x na tela).
@@ -17,7 +44,6 @@ final class StudioTimelineScrollBox {
     var pinchBase: CGFloat?
     /// Para rolar a tela sozinho enquanto o dedo está na borda da régua.
     var proxy: ScrollViewProxy?
-    var edgeTimer: Timer?
     /// Onde o dedo está na régua, em x da tela visível (0 = borda esquerda da área rolável).
     var scrubScreenX: CGFloat = 0
     /// Dedo na régua: quem rola a tela é a borda, não o "seguir a cabeça".
@@ -53,7 +79,7 @@ struct StudioTimelineView: View {
     @State private var scrubPreview: Double?
     @State private var pinching = false
 
-    private static let space = "studio-timeline"
+    private static let space = StudioTimelineLayout.scrollSpace
     private static let markerID = "studio-timeline-marker"
 
     // MARK: Estado derivado
@@ -298,6 +324,11 @@ struct StudioTimelineView: View {
                 previewTime: scrubPreview
             )
             scrollMarker
+            StudioScrollViewFinder { scrollView in
+                box.scrollView = scrollView
+            }
+            .frame(width: 1, height: 1)
+            .allowsHitTesting(false)
         }
         .frame(width: width, height: totalHeight, alignment: .topLeading)
         .background(offsetReader)
@@ -305,7 +336,7 @@ struct StudioTimelineView: View {
 
     private func lanesStack(metrics m: StudioTimelineMetrics, width: CGFloat) -> some View {
         VStack(spacing: 0) {
-            StudioTimelineRuler(metrics: m, contentWidth: width, onScrub: { t, ended in scrub(t, ended: ended) })
+            StudioTimelineRuler(metrics: m, contentWidth: width, onScrub: { x, ended in scrub(viewportX: x, ended: ended) })
                 .equatable()
             ForEach(tracks) { track in
                 lane(track: track, metrics: m, width: width)
@@ -490,17 +521,30 @@ struct StudioTimelineView: View {
         }
     }
 
-    /// Arrastar na régua: parado, a cabeça segue o dedo; tocando, mostra onde vai cair e pula ao soltar.
-    /// Com o dedo perto da borda, a tela rola sozinha e leva a cabeça junto.
-    private func scrub(_ time: Double, ended: Bool) {
+    /// Deslocamento real da rolagem: da UIScrollView quando achada; senão o último lido.
+    private var currentOffset: CGFloat {
+        if let sv = box.scrollView { return max(sv.contentOffset.x, 0) }
+        return box.offset
+    }
+
+    /// Largura visível real da área rolável.
+    private var currentVisibleWidth: CGFloat {
+        if let sv = box.scrollView, sv.bounds.width > 1 { return sv.bounds.width }
+        return max(box.visibleWidth, 1)
+    }
+
+    /// Arrastar na régua (x do dedo na área visível): parado, a cabeça segue o dedo; tocando, mostra
+    /// onde vai cair e pula ao soltar. Com o dedo perto da borda, a tela rola sozinha e leva a cabeça junto.
+    private func scrub(viewportX: CGFloat, ended: Bool) {
         if selection != nil { selection = nil }
         guard !isRecordingLike else {
             box.isScrubbing = false
             stopEdgeScroll()
             return
         }
-        box.scrubScreenX = CGFloat(max(0, time)) * pps - box.offset
+        box.scrubScreenX = viewportX
         box.isScrubbing = !ended
+        let time: Double = Double((currentOffset + max(viewportX, 0)) / max(pps, 0.001))
         if ended {
             stopEdgeScroll()
         } else {
@@ -514,11 +558,15 @@ struct StudioTimelineView: View {
 
     /// Soltou o dedo com a cabeça fora da tela (ex.: arrastou além da borda): rola até ela.
     private func revealIfOffscreen(time: Double) {
-        guard let proxy = box.proxy else { return }
         let x: CGFloat = CGFloat(max(time, 0)) * pps
-        let left: CGFloat = box.offset
-        let width: CGFloat = max(box.visibleWidth, 1)
-        if x < left || x > left + width - 6 {
+        let left: CGFloat = currentOffset
+        let width: CGFloat = currentVisibleWidth
+        guard x < left || x > left + width - 6 else { return }
+        if let sv = box.scrollView {
+            let target: CGFloat = min(max(x - width * 0.15, 0), max(sv.contentSize.width - width, 0))
+            sv.setContentOffset(CGPoint(x: target, y: sv.contentOffset.y), animated: true)
+            box.offset = target
+        } else if let proxy = box.proxy {
             reveal(x: x, proxy: proxy, animated: true)
         }
     }
@@ -538,17 +586,17 @@ struct StudioTimelineView: View {
 
     // MARK: Rolagem automática na borda da régua
 
-    private static let edgeZone: CGFloat = 48
+    private static let edgeZone: CGFloat = 56
 
     /// Velocidade (pt/s) da rolagem automática para o dedo em `screenX`; 0 fora das bordas.
     private func edgeSpeed(_ screenX: CGFloat) -> CGFloat {
-        let width: CGFloat = max(box.visibleWidth, 1)
+        let width: CGFloat = currentVisibleWidth
         let zone: CGFloat = min(Self.edgeZone, width / 4)
         if screenX > width - zone {
             let depth: CGFloat = min((screenX - (width - zone)) / zone, 1.5)
             return 250 + 1200 * depth
         }
-        if screenX < zone && box.offset > 0.5 {
+        if screenX < zone && currentOffset > 0.5 {
             let depth: CGFloat = min((zone - screenX) / zone, 1.5)
             return -(250 + 1200 * depth)
         }
@@ -560,36 +608,46 @@ struct StudioTimelineView: View {
             stopEdgeScroll()
             return
         }
-        guard box.edgeTimer == nil else { return }
+        guard !box.isRunningFrames else { return }
         let view = self
-        // Timer criado à mão e posto no modo .common: no modo padrão o iOS não dispara timers
-        // enquanto o dedo está na tela (o run loop fica em "tracking"), e a rolagem nunca andava.
-        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { _ in
+        box.onFrame = {
             Task { @MainActor in
                 view.edgeTick()
             }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        box.edgeTimer = timer
+        box.startFrames()
     }
 
     private func stopEdgeScroll() {
-        box.edgeTimer?.invalidate()
-        box.edgeTimer = nil
+        box.stopFrames()
+        box.onFrame = nil
     }
 
+    /// Um quadro da rolagem automática: anda a tela e recalcula o tempo sob o dedo parado.
     private func edgeTick() {
         let speed: CGFloat = edgeSpeed(box.scrubScreenX)
-        guard speed != 0, let proxy = box.proxy, !isRecordingLike else {
+        guard speed != 0, box.isScrubbing, !isRecordingLike else {
             stopEdgeScroll()
             return
         }
-        let width: CGFloat = max(box.visibleWidth, 1)
-        let maxOffset: CGFloat = max(contentWidth - width, 0)
-        let newOffset: CGFloat = min(max(box.offset + speed / 60.0, 0), maxOffset)
-        guard abs(newOffset - box.offset) > 0.1 else { return }
-        scroll(toOffset: newOffset, proxy: proxy, animated: false)
-        let time: Double = Double((newOffset + box.scrubScreenX) / max(pps, 0.001))
+        let width: CGFloat = currentVisibleWidth
+        let step: CGFloat = speed / 60.0
+        let newOffset: CGFloat
+        if let sv = box.scrollView {
+            let maxOffset: CGFloat = max(sv.contentSize.width - width, 0)
+            newOffset = min(max(sv.contentOffset.x + step, 0), maxOffset)
+            guard abs(newOffset - sv.contentOffset.x) > 0.1 else { return }
+            sv.setContentOffset(CGPoint(x: newOffset, y: sv.contentOffset.y), animated: false)
+            box.offset = newOffset
+        } else if let proxy = box.proxy {
+            let maxOffset: CGFloat = max(contentWidth - width, 0)
+            newOffset = min(max(box.offset + step, 0), maxOffset)
+            guard abs(newOffset - box.offset) > 0.1 else { return }
+            scroll(toOffset: newOffset, proxy: proxy, animated: false)
+        } else {
+            return
+        }
+        let time: Double = Double((newOffset + max(box.scrubScreenX, 0)) / max(pps, 0.001))
         applyScrub(time, ended: false)
     }
 
@@ -853,5 +911,50 @@ struct StudioTimelineCornerReadout: View {
             .lineLimit(1)
             .minimumScaleFactor(0.7)
             .accessibilityLabel("Posição \(StudioUIFormat.spokenTime(shown))")
+    }
+}
+
+// MARK: - Acha a UIScrollView por trás do ScrollView do SwiftUI
+
+/// View UIKit invisível colocada dentro do conteúdo rolável: sobe pela hierarquia até a primeira
+/// UIScrollView (a da linha do tempo) e a entrega, para a rolagem automática mexer nela direto.
+struct StudioScrollViewFinder: UIViewRepresentable {
+    let onFind: (UIScrollView) -> Void
+
+    func makeUIView(context: Context) -> StudioScrollViewFinderView {
+        let view = StudioScrollViewFinderView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        view.onFind = onFind
+        return view
+    }
+
+    func updateUIView(_ uiView: StudioScrollViewFinderView, context: Context) {
+        uiView.onFind = onFind
+        DispatchQueue.main.async {
+            uiView.search()
+        }
+    }
+}
+
+final class StudioScrollViewFinderView: UIView {
+    var onFind: ((UIScrollView) -> Void)?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        DispatchQueue.main.async { [weak self] in
+            self?.search()
+        }
+    }
+
+    func search() {
+        var current: UIView? = superview
+        while let view = current {
+            if let scrollView = view as? UIScrollView {
+                onFind?(scrollView)
+                return
+            }
+            current = view.superview
+        }
     }
 }

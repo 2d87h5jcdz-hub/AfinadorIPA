@@ -18,6 +18,8 @@ enum StudioTimelineLayout {
     static let minPPS: CGFloat = 4
     static let maxPPS: CGFloat = 2000
     static let defaultPPS: CGFloat = 60
+    /// Nome do espaço de coordenadas da área rolável (x = 0 na borda esquerda visível).
+    static let scrollSpace: String = "studio-timeline"
 }
 
 /// Valores (sem referência ao motor) que as subviews usam para posicionar coisas no tempo.
@@ -79,8 +81,10 @@ struct StudioTimelineMetrics: Equatable {
 struct StudioTimelineRuler: View, Equatable {
     let metrics: StudioTimelineMetrics
     let contentWidth: CGFloat
-    /// Arrastar o dedo na régua: (tempo, terminou?). A rolagem não anda enquanto o dedo está aqui.
-    let onScrub: (Double, Bool) -> Void
+    /// Arrastar o dedo na régua: (x do dedo na área VISÍVEL da linha do tempo, terminou?).
+    /// O x é medido no espaço de coordenadas da rolagem (não do conteúdo), então não depende
+    /// de quanto a tela já rolou.
+    let onScrub: (CGFloat, Bool) -> Void
 
     nonisolated static func == (lhs: StudioTimelineRuler, rhs: StudioTimelineRuler) -> Bool {
         lhs.metrics == rhs.metrics && lhs.contentWidth == rhs.contentWidth
@@ -106,12 +110,12 @@ struct StudioTimelineRuler: View, Equatable {
     }
 
     private var scrubGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(StudioTimelineLayout.scrollSpace))
             .onChanged { value in
-                onScrub(metrics.time(value.location.x), false)
+                onScrub(value.location.x, false)
             }
             .onEnded { value in
-                onScrub(metrics.time(value.location.x), true)
+                onScrub(value.location.x, true)
             }
     }
 
