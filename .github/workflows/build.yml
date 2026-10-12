@@ -3,11 +3,15 @@ name: Gerar IPA
 on:
   push:
     branches: [main, estudio]
+    # Uma tag v* (ex.: v1.0.0) gera o .ipa e publica a Release com ele.
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-15
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -103,3 +107,17 @@ jobs:
         with:
           name: PestanaEstudio-ipa
           path: PestanaEstudio.ipa
+
+      - name: Publicar Release (só em tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="docs/release-notes/${GITHUB_REF_NAME}.md"
+          [ -f "$notes" ] || notes=/dev/null
+          if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" PestanaEstudio.ipa --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" PestanaEstudio.ipa -R "$GITHUB_REPOSITORY" \
+              --title "Pestana Estúdio ${GITHUB_REF_NAME#v}" --notes-file "$notes" --latest
+          fi

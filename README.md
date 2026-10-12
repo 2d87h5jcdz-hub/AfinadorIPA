@@ -44,7 +44,7 @@ A doação é voluntária e não dá direito a recursos extras nem a suporte. É
 
 O app não está na App Store. Ele é distribuído como arquivo **.ipa**, que você instala assinando com o seu próprio Apple ID.
 
-1. Baixe o **PestanaEstudio.ipa** mais recente em [**Releases**](../../releases).
+1. Baixe o **PestanaEstudio.ipa** mais recente: [**⬇️ baixar a última versão**](../../releases/latest/download/PestanaEstudio.ipa) (ou veja todas em [Releases](../../releases)).
 2. Instale com uma destas ferramentas:
    - **[Sideloadly](https://sideloadly.io/)** (Windows ou Mac): conecte o iPhone no cabo, arraste o .ipa, informe seu Apple ID e clique em *Start*.
    - **LiveContainer** ou **AltStore**: abra o .ipa por eles.
