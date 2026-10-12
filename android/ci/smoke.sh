@@ -66,7 +66,7 @@ PY
 }
 
 adb install -r "$APK" || { echo "::error title=Instalação::adb install falhou"; exit 1; }
-adb logcat -c
+adb logcat -G 32M; adb logcat -c
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
 
@@ -102,10 +102,28 @@ tap_text "Treino" && shot 07-treino
 
 # --- Treino: importa um áudio pelo "Abrir com" (intent VIEW), toca, muda tom/velocidade e separa com IA
 python3 android/ci/make_wav.py /tmp/teste.wav
-EXT=/sdcard/Android/data/$PKG/files
-adb shell mkdir -p $EXT
-adb push /tmp/teste.wav $EXT/teste.wav
-adb shell am start -a android.intent.action.VIEW -d "file://$EXT/teste.wav" -t audio/wav -n $PKG/.MainActivity
+adb push /tmp/teste.wav /sdcard/Music/teste.wav
+adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Music/teste.wav >/dev/null
+sleep 3
+ID=""
+for i in 1 2 3 4 5 6; do
+  ID=$(adb shell content query --uri content://media/external/audio/media --projection _id:_display_name | grep "teste.wav" | sed -e 's/.*_id=\([0-9]*\).*/\1/' | head -1 | tr -d '\r')
+  [ -n "$ID" ] && break
+  adb shell content call --uri content://media --method scan_volume --arg external_primary >/dev/null 2>&1
+  sleep 3
+done
+echo "MediaStore id: $ID"
+if [ -n "$ID" ]; then
+  adb shell am start -a android.intent.action.VIEW -d "content://media/external/audio/media/$ID" -t audio/wav \
+    --grant-read-uri-permission -n $PKG/.MainActivity
+fi
+if ! wait_text "MÚSICA ORIGINAL" 30; then
+  # Plano B: o seletor de arquivos do Android, como o usuário faria.
+  tap_text "OK"
+  tap_text "Importar música (MP3, M4A, WAV)"; sleep 3
+  shot 10b-seletor 1
+  tap_text "teste.wav" || { adb shell input keyevent KEYCODE_BACK; }
+fi
 if wait_text "MÚSICA ORIGINAL" 60; then
   shot 11-treino-player 2
   tap_text "Tocar"; sleep 3
@@ -135,7 +153,8 @@ if wait_text "MÚSICA ORIGINAL" 60; then
   shot 16-treino-biblioteca 1
 else
   shot 11-treino-import-falhou 1
-  echo "::error title=Treino::A música não abriu após o intent VIEW"
+  echo "::error title=Treino::A música não abriu (intent VIEW e seletor)"
+  tap_text "OK"
   FAIL=1
 fi
 
