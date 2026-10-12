@@ -73,14 +73,15 @@ struct StudioTimelineView: View {
         StudioTimelineLayout.rulerHeight + StudioTimelineLayout.laneHeight * CGFloat(laneCount)
     }
 
-    /// Segundos de conteúdo: o projeto + folga; cresce em blocos de 30 s durante a gravação
-    /// (para a largura não mudar a cada tique da posição).
+    /// Segundos de conteúdo: o projeto + folga de 60 s depois do fim (dá para levar a cabeça além do
+    /// fim e gravar mais adiante); cresce em blocos de 30 s com a posição (gravação / cabeça além do fim),
+    /// para a largura não mudar a cada tique da posição.
     private var contentSeconds: Double {
         let position: Double = studio.position.isFinite ? max(studio.position, 0) : 0
         let coarse: Double = (position / 30.0).rounded(.up) * 30.0
         let base: Double = max(studio.duration, coarse)
         let minimum: Double = Double(visibleWidth / pps)
-        return max(base + 20.0, minimum)
+        return max(base + 60.0, minimum)
     }
 
     private var contentWidth: CGFloat { CGFloat(contentSeconds) * pps }

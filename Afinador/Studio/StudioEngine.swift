@@ -407,13 +407,27 @@ final class StudioEngine: ObservableObject {
         transport = lead > 0 ? .countIn(beat: 1) : .recording
     }
 
+    /// Quanto a cabeça pode passar do fim da música (para gravar mais adiante numa faixa vazia/armada).
+    static let seekBeyondEnd: TimeInterval = 600
+
     func seek(to time: TimeInterval) {
-        let target = min(max(0, time), duration)
+        guard time.isFinite else { return }
+        let total = duration
+        let limit = max(total, position) + Self.seekBeyondEnd
+        let target = min(max(0, time), limit)
         switch transport {
         case .stopped:
             position = target
         case .playing:
             stopAudio()
+            if total > 0 && target >= total - 0.05 {
+                // Depois do fim não há o que tocar: para e deixa a cabeça ali (pronta para gravar).
+                transport = .stopped
+                trackLevels = [:]
+                position = target
+                if needsRebuild { rebuildEngineIfActive() }
+                return
+            }
             if startTransport(from: target, leadIn: 0, recordFile: nil, silencing: nil) {
                 position = target
             } else {

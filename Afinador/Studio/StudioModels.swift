@@ -72,7 +72,16 @@ extension StudioTrack {
         duration = try c.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0
         clips = try c.decodeIfPresent([StudioClip].self, forKey: .clips) ?? []
         if clips.isEmpty && !fileName.isEmpty && duration > 0 {
-            clips = [StudioClip(fileName: fileName, offset: offset, fileStart: 0, duration: duration)]
+            // v1 gravava offset negativo (compensação de latência a partir do 0). Em v2 offset >= 0:
+            // o começo antes do 0 vira fileStart (o que soa é o mesmo).
+            var clip = StudioClip(fileName: fileName, offset: offset, fileStart: 0, duration: duration)
+            if clip.offset < 0 {
+                let cut = min(-clip.offset, duration)
+                clip.offset = 0
+                clip.fileStart = cut
+                clip.duration = duration - cut
+            }
+            if clip.duration > 0 { clips = [clip] }
         }
     }
 }
