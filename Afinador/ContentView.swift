@@ -13,6 +13,7 @@ extension Color {
 
 struct TunerView: View {
     @ObservedObject var tuner: TunerEngine
+    @State private var showAbout = false
     @Environment(\.verticalSizeClass) private var vSize
 
     private var inTune: Bool { tuner.frequency != nil && abs(tuner.cents) <= 5 }
@@ -81,6 +82,17 @@ struct TunerView: View {
             Text(tuner.running ? "OUVINDO" : "MICROFONE DESLIGADO")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(tuner.running ? .ok : .muted)
+            Button {
+                showAbout = true
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 17))
+                    .foregroundColor(.muted)
+            }
+            .accessibilityLabel("Sobre o Pestana Estúdio")
+            .sheet(isPresented: $showAbout) {
+                AboutView(isWelcome: false)
+            }
         }
     }
 
