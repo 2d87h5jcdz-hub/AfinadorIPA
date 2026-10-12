@@ -108,16 +108,30 @@ jobs:
           name: PestanaEstudio-ipa
           path: PestanaEstudio.ipa
 
-      - name: Publicar Release (só em tag v*)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publicar Release (main com versão nova, ou tag v*)
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="docs/release-notes/${GITHUB_REF_NAME}.md"
-          [ -f "$notes" ] || notes=/dev/null
-          if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" PestanaEstudio.ipa --clobber -R "$GITHUB_REPOSITORY"
+          # Versão = MARKETING_VERSION do project.yml (ex.: 1.0.0 -> tag v1.0.0).
+          # No main só publica se essa versão ainda não tem Release: para lançar outra, suba a versão.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
           else
-            gh release create "$GITHUB_REF_NAME" PestanaEstudio.ipa -R "$GITHUB_REPOSITORY" \
-              --title "Pestana Estúdio ${GITHUB_REF_NAME#v}" --notes-file "$notes" --latest
+            ver=$(grep -E '^\s*MARKETING_VERSION:' project.yml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+            tag="v${ver}"
+          fi
+          echo "Versão: $tag"
+          notes="docs/release-notes/${tag}.md"
+          [ -f "$notes" ] || notes=/dev/null
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              gh release upload "$tag" PestanaEstudio.ipa --clobber -R "$GITHUB_REPOSITORY"
+            else
+              echo "::notice::Release $tag já existe; nada a publicar (suba MARKETING_VERSION para lançar outra)."
+            fi
+          else
+            gh release create "$tag" PestanaEstudio.ipa -R "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "Pestana Estúdio ${tag#v}" --notes-file "$notes" --latest
+            echo "::notice::Release $tag publicada."
           fi
