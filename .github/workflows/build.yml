@@ -3,6 +3,10 @@ name: Gerar IPA
 on:
   push:
     branches: [main, estudio]
+    # Mudanças só na página de divulgação não geram .ipa.
+    paths-ignore:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
     # Uma tag v* (ex.: v1.0.0) gera o .ipa e publica a Release com ele.
     tags: ['v*']
   workflow_dispatch:

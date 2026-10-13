@@ -36,6 +36,7 @@ Leia antes de qualquer tarefa neste repositório. Resume as decisões e o histó
   `gh api repos/2d87h5jcdz-hub/PestanaEstudio/check-runs/<job_id>/annotations` (job id via `gh run view <run> --json jobs`). Logs completos e artifacts **não** baixam pelo proxy.
 - **Release iOS automática:** quando o `main` recebe um `MARKETING_VERSION` novo em `project.yml`, o build cria a Release `v<versão>` com o `.ipa`, usando `docs/release-notes/v<versão>.md`. Para lançar: subir `MARKETING_VERSION` **e** `CURRENT_PROJECT_VERSION`, escrever as notas, fast-forward do `estudio` no `main`.
 - `altstore-source.yml`: depois de cada build do `main`, gera `altstore/source.json` a partir das Releases (`altstore/build_source.py` + `altstore/app.json`) e anexa na Release mais recente. URL da fonte (AltStore/SideStore): `https://github.com/2d87h5jcdz-hub/PestanaEstudio/releases/latest/download/source.json`.
+- **Página de divulgação** (`site/index.html`, HTML único com afinador cromático no navegador): publicada pelo `pages.yml` em push no `main` que mexa em `site/**`, `docs/prints/**` ou no QR (o workflow copia prints, QR e ícone para `_site/`). URL: `https://2d87h5jcdz-hub.github.io/PestanaEstudio/`. O `build.yml` ignora pushes só de `site/**`. A API de Pages é bloqueada pelo proxy: ativar/configurar só pelo usuário em Settings › Pages (Source: GitHub Actions).
 - Outros: `android.yml` (APK `PestanaEstudio-apk` + teste no emulador), `demucs-model.yml` / `demucs-onnx.yml` (conversão do modelo), `pix-qrcode.yml`.
 - Versões lançadas: 1.0.0, 1.1.0 (afinação automática, NAM, efeitos, FX), 1.1.1 (aviso de boas-vindas + licença nova), **1.2.0** (afinador com modo Livre cromático).
 
@@ -50,7 +51,7 @@ Leia antes de qualquer tarefa neste repositório. Resume as decisões e o histó
 - README tem tutorial com prints (`docs/prints/`), instalação (Sideloadly, SideStore/AltStore com a fonte), seção Apoie com Pix/QR.
 
 ## Ideias e pendências conhecidas
-- Página de download (GitHub Pages) com botões iPhone/Android: combinada para depois que o Android estabilizar.
+- Página (GitHub Pages): botão de download do Android quando sair a 1ª Release Android.
 - NAM: simulação de caixa (IR) para capturas "amp only"; avaliar desempenho ao vivo no iPhone.
 - App Store: exigiria conta de desenvolvedor (US$ 99/ano) e tirar Pix de dentro do app.
 - Android: ver `android/NOTAS.md`.
