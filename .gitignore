@@ -10,3 +10,4 @@ Payload/
 scripts/__pycache__/
 __pycache__/
 .DS_Store
+altstore/source.json

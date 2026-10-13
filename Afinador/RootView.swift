@@ -18,6 +18,8 @@ struct ContentView: View {
     @StateObject private var metronome = Metronome()
     @StateObject private var studio = StudioEngine()
     @State private var tab = 0
+    /// Aviso de boas-vindas (gratuito / doação) só na primeira abertura.
+    @AppStorage("about.welcomeShown") private var welcomeShown = false
 
     init() {
         let appearance = UITabBarAppearance()
@@ -50,6 +52,9 @@ struct ContentView: View {
                 .statusBarCover()
                 .tabItem { Label("Treino", systemImage: "music.note.list") }
                 .tag(4)
+        }
+        .sheet(isPresented: Binding(get: { !welcomeShown }, set: { if !$0 { welcomeShown = true } })) {
+            AboutView(isWelcome: true)
         }
         .tint(Color.brass)
         .onChange(of: tab) { newTab in
