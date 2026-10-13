@@ -143,7 +143,9 @@ struct TunerView: View {
     }
 
     private var hint: String {
-        guard tuner.frequency != nil else { return "Toque uma corda" }
+        guard tuner.frequency != nil else {
+            return tuner.mode == .chromatic ? "Toque qualquer nota" : "Toque uma corda"
+        }
         if inTune { return "Afinada ✓" }
         return tuner.cents < 0 ? "Baixa · aperte a tarraxa" : "Alta · afrouxe a tarraxa"
     }
@@ -155,12 +157,13 @@ struct TunerView: View {
 
     private var modeRow: some View {
         HStack {
-            Picker("Modo", selection: $tuner.autoMode) {
-                Text("Automático").tag(true)
-                Text("Por corda").tag(false)
+            Picker("Modo", selection: $tuner.mode) {
+                Text("Livre").tag(TunerMode.chromatic)
+                Text("Auto").tag(TunerMode.auto)
+                Text("Por corda").tag(TunerMode.manual)
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 230)
+            .frame(maxWidth: 250)
             Spacer()
             Text("segure = ouvir")
                 .font(.system(size: 11, design: .monospaced))
@@ -173,7 +176,7 @@ struct TunerView: View {
     private var strings: some View {
         HStack(spacing: 8) {
             ForEach(Array(tuner.tuning.midi.enumerated()), id: \.offset) { i, m in
-                let active = tuner.autoMode ? tuner.stringIndex == i : tuner.manualIndex == i
+                let active: Bool = tuner.mode == .manual ? tuner.manualIndex == i : tuner.stringIndex == i
                 let done = tuner.tunedStrings.contains(i) && !active
                 VStack(spacing: 2) {
                     Text(Note.name(m))
@@ -190,7 +193,10 @@ struct TunerView: View {
                         .stroke(active ? Color.brass : (done ? Color.ok : Color.line), lineWidth: active ? 2 : 1)
                 )
                 .contentShape(Rectangle())
-                .onTapGesture { tuner.manualIndex = i }
+                .onTapGesture {
+                    tuner.manualIndex = i
+                    tuner.mode = .manual
+                }
                 .onLongPressGesture(minimumDuration: 0.35) {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     tuner.playReference(i)

@@ -17,6 +17,17 @@ struct Tuning: Identifiable, Hashable {
     ]
 }
 
+/// Como o afinador escolhe a nota alvo.
+enum TunerMode: String, CaseIterable, Identifiable {
+    /// Cromático: mostra qualquer nota que estiver soando (afinações fora da lista).
+    case chromatic
+    /// Procura a corda mais próxima da afinação escolhida.
+    case auto
+    /// Fica preso à corda tocada na tela.
+    case manual
+    var id: String { rawValue }
+}
+
 enum Note {
     static let names = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
     static func name(_ m: Int) -> String { names[((m % 12) + 12) % 12] }
@@ -41,8 +52,8 @@ final class TunerEngine: ObservableObject {
     @Published var a4: Double {
         didSet { UserDefaults.standard.set(a4, forKey: "a4") }
     }
-    @Published var autoMode: Bool {
-        didSet { UserDefaults.standard.set(autoMode, forKey: "auto") }
+    @Published var mode: TunerMode {
+        didSet { UserDefaults.standard.set(mode.rawValue, forKey: "tunerMode"); chromaticTarget = nil }
     }
     @Published var manualIndex = 0
 
@@ -56,6 +67,8 @@ final class TunerEngine: ObservableObject {
     private var history: [Double] = []
     private var silentFrames = 0
     private var inTuneSince: Date? = nil
+    /// Nota atual do modo cromático, mantida com histerese para não piscar entre duas notas.
+    private var chromaticTarget: Int? = nil
 
     // Tom de referência
     private var toneNode: AVAudioSourceNode?
@@ -70,7 +83,12 @@ final class TunerEngine: ObservableObject {
         tuning = Tuning.all.first { $0.name == saved } ?? Tuning.all[0]
         let savedA4 = d.double(forKey: "a4")
         a4 = savedA4 > 0 ? savedA4 : 440
-        autoMode = d.object(forKey: "auto") as? Bool ?? true
+        if let raw = d.string(forKey: "tunerMode"), let saved = TunerMode(rawValue: raw) {
+            mode = saved
+        } else {
+            // Versões antigas guardavam só "auto" (true/false).
+            mode = (d.object(forKey: "auto") as? Bool ?? true) ? .auto : .manual
+        }
     }
 
     func hz(_ midi: Int) -> Double { a4 * pow(2, Double(midi - 69) / 12) }
@@ -177,7 +195,18 @@ final class TunerEngine: ObservableObject {
         var target: Int
         var idx: Int?
 
-        if autoMode {
+        switch mode {
+        case .chromatic:
+            // Troca de nota só quando passa ~60 cents da atual (evita piscar na fronteira de ±50).
+            if let cur = chromaticTarget, abs(m - Double(cur)) < 0.6 {
+                target = cur
+            } else {
+                target = Int(m.rounded())
+            }
+            chromaticTarget = target
+            // Se a nota for uma das cordas da afinação, destaca a corda.
+            idx = notes.firstIndex(of: target)
+        case .auto:
             var best = Double.infinity
             var bestIdx = 0
             for (i, n) in notes.enumerated() {
@@ -186,7 +215,7 @@ final class TunerEngine: ObservableObject {
             }
             if best <= 2.5 { target = notes[bestIdx]; idx = bestIdx }
             else { target = Int(m.rounded()); idx = nil }
-        } else {
+        case .manual:
             idx = manualIndex
             target = notes[manualIndex]
             while m - Double(target) > 6 { target += 12 }
@@ -220,6 +249,7 @@ final class TunerEngine: ObservableObject {
         centsPrecise = 0
         stringIndex = nil
         inTuneSince = nil
+        chromaticTarget = nil
     }
 
     /// Detector de frequência fundamental YIN
