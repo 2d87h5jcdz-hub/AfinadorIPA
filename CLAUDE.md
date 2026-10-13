@@ -37,7 +37,7 @@ Leia antes de qualquer tarefa neste repositório. Resume as decisões e o histó
 - **Release iOS automática:** quando o `main` recebe um `MARKETING_VERSION` novo em `project.yml`, o build cria a Release `v<versão>` com o `.ipa`, usando `docs/release-notes/v<versão>.md`. Para lançar: subir `MARKETING_VERSION` **e** `CURRENT_PROJECT_VERSION`, escrever as notas, fast-forward do `estudio` no `main`.
 - `altstore-source.yml`: depois de cada build do `main`, gera `altstore/source.json` a partir das Releases (`altstore/build_source.py` + `altstore/app.json`) e anexa na Release mais recente. URL da fonte (AltStore/SideStore): `https://github.com/2d87h5jcdz-hub/PestanaEstudio/releases/latest/download/source.json`.
 - Outros: `android.yml` (APK `PestanaEstudio-apk` + teste no emulador), `demucs-model.yml` / `demucs-onnx.yml` (conversão do modelo), `pix-qrcode.yml`.
-- Versões lançadas: 1.0.0, 1.1.0 (afinação automática, NAM, efeitos, FX), **1.1.1** (aviso de boas-vindas + licença nova).
+- Versões lançadas: 1.0.0, 1.1.0 (afinação automática, NAM, efeitos, FX), 1.1.1 (aviso de boas-vindas + licença nova), **1.2.0** (afinador com modo Livre cromático).
 
 ## Limitações do ambiente (não perca tempo)
 - Pelo proxy, **não dá para criar tags, refs nem Releases** pela API nem por `git push` de tag. Por isso a Release é publicada pelo próprio workflow.
