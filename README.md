@@ -68,7 +68,15 @@ No app, vá em **Fontes › +**, cole o endereço acima e instale o **Pestana Es
 
 ## Android (em desenvolvimento)
 
-A versão para Android fica na pasta [`android/`](android/) (Kotlin + Jetpack Compose; o Estúdio usa C++ com Oboe). Tem **tudo o que a versão de iPhone tem**: Afinador, Acordes, Metrônomo, Estúdio (gravação em camadas, efeitos, amplificador NAM, afinação automática da voz e exportação) e Treino (tom, velocidade, loop A-B e separação de instrumentos por IA — o modelo de ~115 MB é baixado na primeira separação). O que está escrito abaixo para o iPhone vale para o Android; onde diz "app Arquivos", no Android é o seletor de arquivos do celular.
+A versão para Android fica na pasta [`android/`](android/) (Kotlin + Jetpack Compose; o Estúdio usa C++ com Oboe). Ela ainda **não tem Release**: os APKs de teste saem pelo GitHub Actions.
+
+| Aba | Android |
+| --- | --- |
+| Afinador, Acordes, Metrônomo | ✅ prontos |
+| Treino (tom, velocidade, loop A-B, separação por IA) | ✅ pronto — o modelo de IA (~115 MB) é baixado na primeira separação |
+| Estúdio (gravação em camadas, efeitos, amp NAM, afinação da voz) | 🚧 **em desenvolvimento** — as telas e os efeitos funcionam, mas o som gravado pelo microfone ainda sai ruim em alguns aparelhos |
+
+Onde o guia abaixo diz "app Arquivos", no Android é o seletor de arquivos do celular.
 
 No Android não há a limitação de 7 dias do iPhone: o app é um **.apk** comum, instalado uma vez e pronto.
 
