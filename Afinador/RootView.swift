@@ -17,6 +17,7 @@ struct ContentView: View {
     @StateObject private var tuner = TunerEngine()
     @StateObject private var metronome = Metronome()
     @StateObject private var studio = StudioEngine()
+    @StateObject private var looper = LooperEngine()
     @State private var tab = 0
     /// Aviso de boas-vindas (gratuito / doação) só na primeira abertura.
     @AppStorage("about.welcomeShown") private var welcomeShown = false
@@ -52,6 +53,10 @@ struct ContentView: View {
                 .statusBarCover()
                 .tabItem { Label("Treino", systemImage: "music.note.list") }
                 .tag(4)
+            LoopView(looper: looper)
+                .statusBarCover()
+                .tabItem { Label("Loop", systemImage: "repeat.circle") }
+                .tag(5)
         }
         .sheet(isPresented: Binding(get: { !welcomeShown }, set: { if !$0 { welcomeShown = true } })) {
             AboutView(isWelcome: true)
