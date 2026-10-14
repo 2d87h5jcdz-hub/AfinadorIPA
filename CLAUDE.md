@@ -39,7 +39,7 @@ Leia antes de qualquer tarefa neste repositório. Resume as decisões e o histó
 - `altstore-source.yml`: depois de cada build do `main`, gera `altstore/source.json` a partir das Releases (`altstore/build_source.py` + `altstore/app.json`) e anexa na Release mais recente. URL da fonte (AltStore/SideStore): `https://github.com/2d87h5jcdz-hub/PestanaEstudio/releases/latest/download/source.json`.
 - **Página de divulgação** (`site/index.html`, HTML único com afinador cromático no navegador): publicada pelo `pages.yml` em push no `main` que mexa em `site/**`, `docs/prints/**` ou no QR (o workflow copia prints, QR e ícone para `_site/`). URL: `https://2d87h5jcdz-hub.github.io/PestanaEstudio/`. O `build.yml` ignora pushes só de `site/**`. A API de Pages é bloqueada pelo proxy: ativar/configurar só pelo usuário em Settings › Pages (Source: GitHub Actions).
 - Outros: `android.yml` (APK `PestanaEstudio-apk` + teste no emulador), `demucs-model.yml` / `demucs-onnx.yml` (conversão do modelo), `pix-qrcode.yml`.
-- Versões lançadas: 1.0.0, 1.1.0 (afinação automática, NAM, efeitos, FX), 1.1.1 (aviso de boas-vindas + licença nova), **1.2.0** (afinador com modo Livre cromático).
+- Versões lançadas: 1.0.0, 1.1.0 (afinação automática, NAM, efeitos, FX), 1.1.1 (aviso de boas-vindas + licença nova), 1.2.0 (afinador com modo Livre cromático), **1.3.0** (Loop com modo automático e pedal BT; drive que sustenta; gate suave).
 
 ## Limitações do ambiente (não perca tempo)
 - Pelo proxy, **não dá para criar tags, refs nem Releases** pela API nem por `git push` de tag. Por isso a Release é publicada pelo próprio workflow.

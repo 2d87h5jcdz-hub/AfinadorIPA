@@ -243,6 +243,8 @@ Toque em **Importar música (MP3, M4A, WAV)** e escolha o arquivo no app Arquivo
 
 Uma pedaleira de loop para tocar ao vivo: grave uma base, feche o loop e vá somando camadas por cima enquanto toca.
 
+<img src="docs/prints/15-loop.jpg" width="300">
+
 1. Toque no botão redondo da **Faixa 1** para gravar. Toque de novo para fechar o loop: ele já começa a tocar sem parar. Esse primeiro trecho define o **ciclo**.
 2. Grave as outras faixas do mesmo jeito. Elas seguem o ciclo da primeira. Antes de gravar, escolha **×1, ×2 ou ×4** para uma faixa mais longa (por exemplo, uma frase que só se completa em dois ciclos).
 3. Tocar no botão de uma faixa que já toca **grava por cima** (uma camada nova). O botão ↶ desfaz a última camada.
