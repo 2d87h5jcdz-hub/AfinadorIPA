@@ -131,6 +131,19 @@ struct LooperScratch {
 }
 - (NSInteger)multiplierForTrack:(NSInteger)track { return _core->trackMultiplier((int)track); }
 
+- (void)setAutoEnabled:(BOOL)enabled bars:(NSInteger)bars startOnSound:(BOOL)startOnSound
+                 chain:(BOOL)chain gapCycles:(NSInteger)gap trackCount:(NSInteger)count {
+  _core->setAuto(enabled, (int)bars,
+                 startOnSound ? pestana::LooperCore::StartOnSound : pestana::LooperCore::StartCountIn,
+                 chain, (int)gap, (int)count);
+}
+- (void)setTempoBPM:(double)bpm beatsPerBar:(NSInteger)beats { _core->setTempo(bpm, (int)beats); }
+- (void)setClickDuringLoop:(BOOL)on volume:(float)volume { _core->setClick(on, volume); }
+- (void)setTriggerLevel:(float)level { _core->setTriggerLevel(level); }
+- (double)autoCycleSeconds { return (double)_core->autoCycleLength() / _core->sampleRate(); }
+- (PestanaLoopPhase)phase { return (PestanaLoopPhase)_core->phase(); }
+- (NSInteger)currentBeat { return _core->currentBeat(); }
+
 - (BOOL)pressTrack:(NSInteger)track { return _core->press((int)track) ? YES : NO; }
 - (void)toggleMuteTrack:(NSInteger)track { _core->toggleMute((int)track); }
 - (void)undoTrack:(NSInteger)track { _core->undo((int)track); }

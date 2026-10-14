@@ -11,6 +11,14 @@ typedef NS_ENUM(NSInteger, PestanaLoopTrackState) {
   PestanaLoopTrackStateRecording = 1,
   PestanaLoopTrackStatePlaying = 2,
   PestanaLoopTrackStateOverdubbing = 3,
+  /// Modo automático: espera o próximo início de ciclo (ou a contagem / a primeira nota).
+  PestanaLoopTrackStateArmed = 4,
+};
+
+typedef NS_ENUM(NSInteger, PestanaLoopPhase) {
+  PestanaLoopPhaseNone = 0,
+  PestanaLoopPhaseCountIn = 1,
+  PestanaLoopPhaseWaitingSound = 2,
 };
 
 @interface PestanaLooperAU : AUAudioUnit
@@ -24,6 +32,16 @@ typedef NS_ENUM(NSInteger, PestanaLoopTrackState) {
 - (void)setVolume:(float)volume forTrack:(NSInteger)track;
 - (void)setMultiplier:(NSInteger)multiplier forTrack:(NSInteger)track;
 - (NSInteger)multiplierForTrack:(NSInteger)track;
+
+/// Modo automático. startOnSound: começa na primeira nota (senão, um compasso de contagem).
+- (void)setAutoEnabled:(BOOL)enabled bars:(NSInteger)bars startOnSound:(BOOL)startOnSound
+                 chain:(BOOL)chain gapCycles:(NSInteger)gap trackCount:(NSInteger)count;
+- (void)setTempoBPM:(double)bpm beatsPerBar:(NSInteger)beats;
+- (void)setClickDuringLoop:(BOOL)on volume:(float)volume;
+- (void)setTriggerLevel:(float)level;
+@property (nonatomic, readonly) double autoCycleSeconds;
+@property (nonatomic, readonly) PestanaLoopPhase phase;
+@property (nonatomic, readonly) NSInteger currentBeat;
 
 /// false = não deu agora (ex.: ainda fechando a gravação anterior); tente de novo em alguns ms.
 - (BOOL)pressTrack:(NSInteger)track;

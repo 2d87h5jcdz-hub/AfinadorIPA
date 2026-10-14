@@ -41,6 +41,7 @@ final class LooperEngine: ObservableObject {
             if clamped != trackCount { trackCount = clamped; return }
             UserDefaults.standard.set(clamped, forKey: Keys.trackCount)
             if selected >= clamped { selected = clamped - 1 }
+            applyAuto()
         }
     }
     @Published var selected: Int = 0
@@ -87,6 +88,23 @@ final class LooperEngine: ObservableObject {
     }
     @Published private(set) var volumes: [Float]
 
+    // MARK: Modo automático (tempo e compassos)
+
+    @Published var autoEnabled: Bool { didSet { saveAuto() } }
+    @Published var bpm: Int { didSet { let c = min(240, max(40, bpm)); if c != bpm { bpm = c; return }; saveAuto() } }
+    @Published var beatsPerBar: Int { didSet { saveAuto() } }
+    @Published var bars: Int { didSet { saveAuto() } }
+    @Published var startOnSound: Bool { didSet { saveAuto() } }
+    @Published var chain: Bool { didSet { saveAuto() } }
+    @Published var gapCycles: Int { didSet { saveAuto() } }
+    @Published var clickInLoop: Bool { didSet { saveAuto() } }
+    /// 0 = pouca (precisa tocar forte), 1 = média, 2 = muita.
+    @Published var soundSensitivity: Int { didSet { saveAuto() } }
+    @Published private(set) var phase: PestanaLoopPhase = .none
+    @Published private(set) var beat: Int = 0
+    @Published private(set) var autoCycleSeconds: Double = 0
+    private var tapTimes: [Date] = []
+
     // MARK: Interno
 
     private enum Keys {
@@ -97,6 +115,7 @@ final class LooperEngine: ObservableObject {
         static let inputGain = "loop.inputGainDB"
         static let volumes = "loop.volumes"
         static let multipliers = "loop.multipliers"
+        static let auto = "loop.auto"
         static let preferredInputType = "studio.preferredInputType"   // mesma escolha do Estúdio
     }
 
@@ -126,6 +145,16 @@ final class LooperEngine: ObservableObject {
         inputGainDB = min(24, max(0, d.float(forKey: Keys.inputGain)))
         let savedVolumes = d.array(forKey: Keys.volumes) as? [Float] ?? []
         volumes = (0..<Self.maxTracks).map { $0 < savedVolumes.count ? savedVolumes[$0] : 1 }
+        let a = d.dictionary(forKey: Keys.auto) ?? [:]
+        autoEnabled = a["on"] as? Bool ?? false
+        bpm = a["bpm"] as? Int ?? 90
+        beatsPerBar = a["beats"] as? Int ?? 4
+        bars = a["bars"] as? Int ?? 4
+        startOnSound = a["onSound"] as? Bool ?? false
+        chain = a["chain"] as? Bool ?? false
+        gapCycles = a["gap"] as? Int ?? 0
+        clickInLoop = a["click"] as? Bool ?? false
+        soundSensitivity = a["sens"] as? Int ?? 1
 
         PestanaLooperAU.registerIfNeeded()
         looperNode = AVAudioUnitEffect(audioComponentDescription: PestanaLooperAU.pestanaComponentDescription())
@@ -137,9 +166,46 @@ final class LooperEngine: ObservableObject {
                 if t < mults.count { looper.setMultiplier(mults[t], forTrack: t) }
             }
         }
+        applyAuto()
         observeSession()
         refresh()
     }
+
+    private func saveAuto() {
+        let a: [String: Any] = [
+            "on": autoEnabled, "bpm": bpm, "beats": beatsPerBar, "bars": bars, "onSound": startOnSound,
+            "chain": chain, "gap": gapCycles, "click": clickInLoop, "sens": soundSensitivity,
+        ]
+        UserDefaults.standard.set(a, forKey: Keys.auto)
+        applyAuto()
+    }
+
+    private func applyAuto() {
+        guard let looper else { return }
+        looper.setTempoBPM(Double(bpm), beatsPerBar: beatsPerBar)
+        looper.setAutoEnabled(autoEnabled, bars: bars, startOnSound: startOnSound,
+                              chain: chain, gapCycles: gapCycles, trackCount: trackCount)
+        looper.setClickDuringLoop(clickInLoop, volume: 0.45)
+        let levels: [Float] = [0.15, 0.07, 0.03]
+        looper.setTriggerLevel(levels[min(2, max(0, soundSensitivity))])
+        autoCycleSeconds = looper.autoCycleSeconds
+    }
+
+    /// Tempo pelo toque (média dos últimos intervalos).
+    func tapTempo() {
+        let now = Date()
+        if let last = tapTimes.last, now.timeIntervalSince(last) > 2 { tapTimes.removeAll() }
+        tapTimes.append(now)
+        if tapTimes.count > 5 { tapTimes.removeFirst() }
+        guard tapTimes.count >= 2 else { return }
+        var total: TimeInterval = 0
+        for i in 1..<tapTimes.count { total += tapTimes[i].timeIntervalSince(tapTimes[i - 1]) }
+        let interval = total / Double(tapTimes.count - 1)
+        if interval > 0 { bpm = Int((60 / interval).rounded()) }
+    }
+
+    /// Tempo e compassos só mudam sem nada gravado (o ciclo já foi definido).
+    var canChangeTempo: Bool { !hasContent }
 
     // MARK: - Ciclo de vida (aba visível)
 
@@ -453,5 +519,7 @@ final class LooperEngine: ObservableObject {
         if baseSeconds != looper.baseSeconds { baseSeconds = looper.baseSeconds }
         positionSeconds = looper.positionSeconds
         inputLevel = looper.inputLevel
+        if phase != looper.phase { phase = looper.phase }
+        if beat != looper.currentBeat { beat = looper.currentBeat }
     }
 }

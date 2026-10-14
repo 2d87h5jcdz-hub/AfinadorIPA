@@ -24,6 +24,7 @@ struct LoopView: View {
                 VStack(spacing: 14) {
                     header
                     transport
+                    LoopAutoCard(looper: looper)
                     inputCard
                     ForEach(0..<looper.trackCount, id: \.self) { t in
                         LoopTrackRow(looper: looper, index: t)
@@ -73,6 +74,8 @@ struct LoopView: View {
 
     private var statusText: String {
         if !looper.running { return looper.permissionDenied ? "SEM MICROFONE" : "DESLIGADO" }
+        if looper.phase == .countIn { return "CONTAGEM" }
+        if looper.phase == .waitingSound { return "ESPERANDO VOCÊ TOCAR" }
         if anyRecording { return "GRAVANDO" }
         return looper.playing ? "TOCANDO" : "PARADO"
     }
@@ -120,13 +123,20 @@ struct LoopView: View {
     }
 
     private var cycleTitle: String {
+        if looper.phase == .countIn { return "Contagem… \(looper.beat + 1)" }
+        if looper.phase == .waitingSound { return "Pode começar a tocar" }
         if looper.baseSeconds > 0 { return "Ciclo de \(Self.seconds(looper.baseSeconds))" }
         if anyRecording { return "Gravando o ciclo… \(Self.seconds(looper.positionSeconds))" }
         return "Grave a primeira faixa"
     }
 
     private var cycleSubtitle: String {
+        if looper.phase == .waitingSound { return "A gravação começa na primeira nota." }
+        if looper.phase == .countIn { return "A gravação começa no próximo compasso." }
         if looper.baseSeconds > 0 { return "Todas as faixas seguem este tempo." }
+        if looper.autoEnabled {
+            return "Toque no botão da faixa: o loop fecha sozinho depois de \(looper.bars) \(looper.bars == 1 ? "compasso" : "compassos")."
+        }
         return "Toque no botão da faixa para gravar e de novo para fechar o loop."
     }
 
@@ -370,9 +380,13 @@ struct LoopTrackRow: View {
         case .empty:
             return info.multiplier == 1 ? "Toque para gravar" : "Toque para gravar · \(info.multiplier) ciclos"
         case .recording:
-            return "Gravando… toque para fechar o loop"
+            return looper.autoEnabled ? "Gravando… fecha sozinho" : "Gravando… toque para fechar o loop"
         case .overdubbing:
-            return "Gravando por cima… toque para parar"
+            return looper.autoEnabled ? "Gravando por cima uma volta…" : "Gravando por cima… toque para parar"
+        case .armed:
+            if looper.phase == .countIn { return "Grava depois da contagem" }
+            if looper.phase == .waitingSound { return "Grava quando você tocar" }
+            return "Armada · entra no próximo ciclo (toque para cancelar)"
         case .playing:
             let len = LoopView.seconds(info.length)
             let cycles = info.multiplier > 1 ? " · \(info.multiplier) ciclos" : ""
@@ -385,7 +399,7 @@ struct LoopTrackRow: View {
 
     @ViewBuilder
     private var trailing: some View {
-        if info.state == .empty {
+        if info.state == .empty || info.state == .armed {
             Menu {
                 Picker("Tamanho", selection: Binding(get: { info.multiplier },
                                                      set: { looper.setMultiplier($0, for: index) })) {
@@ -451,7 +465,7 @@ struct LoopTrackButton: View {
         Button(action: action) {
             ZStack {
                 Circle().stroke(Color.line, lineWidth: 5)
-                if info.state != .empty && info.state != .recording {
+                if info.state != .empty && info.state != .recording && info.state != .armed {
                     Circle()
                         .trim(from: 0, to: CGFloat(playing ? info.progress : 0))
                         .stroke(ringColor, style: StrokeStyle(lineWidth: 5, lineCap: .round))
@@ -459,6 +473,9 @@ struct LoopTrackButton: View {
                 }
                 if info.state == .recording {
                     Circle().stroke(Color.off, lineWidth: 5)
+                }
+                if info.state == .armed {
+                    Circle().stroke(Color.off, style: StrokeStyle(lineWidth: 3, dash: [5, 5]))
                 }
                 icon
             }
@@ -474,6 +491,8 @@ struct LoopTrackButton: View {
         switch info.state {
         case .empty:
             Circle().fill(Color.off.opacity(0.85)).frame(width: 22, height: 22)
+        case .armed:
+            ArmedDot()
         case .recording:
             RecordingDot()
         case .overdubbing:
@@ -490,10 +509,20 @@ struct LoopTrackButton: View {
     private var accessibility: String {
         switch info.state {
         case .empty: return "Gravar"
+        case .armed: return "Cancelar"
         case .recording: return "Fechar o loop"
         case .overdubbing: return "Parar de gravar por cima"
         default: return info.muted ? "Voltar a tocar" : "Gravar por cima"
         }
+    }
+}
+
+/// Faixa armada: anel tracejado e bolinha vazada.
+struct ArmedDot: View {
+    var body: some View {
+        Circle()
+            .stroke(Color.off, lineWidth: 3)
+            .frame(width: 20, height: 20)
     }
 }
 
@@ -630,5 +659,175 @@ final class PedalCatcherView: UIView {
         holdTimer = nil
         secondaryDown = false
         super.pressesCancelled(presses, with: event)
+    }
+}
+
+// MARK: - Modo automático (tempo e compassos)
+
+struct LoopAutoCard: View {
+    @ObservedObject var looper: LooperEngine
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle(isOn: $looper.autoEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Loop automático")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("Fecha sozinho no tempo certo, sem tirar as mãos do instrumento.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(Color.brass)
+            .disabled(!looper.canChangeTempo)
+            if looper.autoEnabled {
+                tempoRow
+                barsRow
+                startRow
+                chainRow
+                Toggle(isOn: $looper.clickInLoop) {
+                    Text("Clique durante o loop").font(.system(size: 14))
+                }
+                .tint(Color.brass)
+                if !looper.canChangeTempo {
+                    Text("Para mudar o tempo ou os compassos, apague as faixas.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.muted)
+                }
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 20).fill(Color.panel))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.line))
+    }
+
+    private var tempoRow: some View {
+        HStack(spacing: 10) {
+            beatDots
+            Spacer(minLength: 4)
+            stepButton("−") { looper.bpm -= 1 }
+            Text("\(looper.bpm) BPM")
+                .font(.system(size: 15, weight: .semibold, design: .monospaced)).monospacedDigit()
+                .frame(minWidth: 84)
+            stepButton("+") { looper.bpm += 1 }
+            Button("Tap") { looper.tapTempo() }
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 48, height: 32)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.line))
+                .foregroundColor(.fg)
+        }
+        .disabled(!looper.canChangeTempo)
+    }
+
+    private var beatDots: some View {
+        HStack(spacing: 5) {
+            ForEach(0..<looper.beatsPerBar, id: \.self) { i in
+                let active = (looper.playing || looper.phase == .countIn) && looper.beat == i
+                Circle()
+                    .fill(active ? (i == 0 ? Color.brass : Color.fg) : Color.line)
+                    .frame(width: 9, height: 9)
+            }
+        }
+    }
+
+    private var barsRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Compasso").font(.system(size: 14))
+                Spacer()
+                Picker("Compasso", selection: $looper.beatsPerBar) {
+                    Text("2/4").tag(2)
+                    Text("3/4").tag(3)
+                    Text("4/4").tag(4)
+                    Text("6/8").tag(6)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 220)
+            }
+            HStack {
+                Text("Tamanho").font(.system(size: 14))
+                Spacer()
+                Picker("Compassos", selection: $looper.bars) {
+                    Text("1").tag(1)
+                    Text("2").tag(2)
+                    Text("4").tag(4)
+                    Text("8").tag(8)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 220)
+            }
+            Text("Ciclo de \(looper.bars) \(looper.bars == 1 ? "compasso" : "compassos") · \(LoopView.seconds(looper.autoCycleSeconds))")
+                .font(.system(size: 12))
+                .foregroundColor(.muted)
+        }
+        .disabled(!looper.canChangeTempo)
+    }
+
+    private var startRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Começar").font(.system(size: 14))
+                Spacer()
+                Picker("Começar", selection: $looper.startOnSound) {
+                    Text("Com contagem").tag(false)
+                    Text("Ao tocar").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 240)
+            }
+            if looper.startOnSound {
+                HStack {
+                    Text("Sensibilidade").font(.system(size: 14))
+                    Spacer()
+                    Picker("Sensibilidade", selection: $looper.soundSensitivity) {
+                        Text("Baixa").tag(0)
+                        Text("Média").tag(1)
+                        Text("Alta").tag(2)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 240)
+                }
+            }
+        }
+        .disabled(!looper.canChangeTempo)
+    }
+
+    private var chainRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: $looper.chain) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Gravar as faixas em sequência").font(.system(size: 14))
+                    Text("Depois da base, cada faixa vazia grava sozinha no ciclo seguinte.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(Color.brass)
+            if looper.chain {
+                HStack {
+                    Text("Folga entre faixas").font(.system(size: 14))
+                    Spacer()
+                    Picker("Folga", selection: $looper.gapCycles) {
+                        Text("Nenhuma").tag(0)
+                        Text("1 ciclo").tag(1)
+                        Text("2 ciclos").tag(2)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 240)
+                }
+            }
+        }
+        .disabled(!looper.canChangeTempo)
+    }
+
+    private func stepButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label).font(.system(size: 18))
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.line))
+                .foregroundColor(.fg)
+        }
     }
 }
