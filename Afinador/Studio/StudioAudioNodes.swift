@@ -50,9 +50,14 @@ enum StudioAudioUnits {
     }
 }
 
-// MARK: - Cadeia de efeitos: gate → EQ → compressor → guitarra (drive + amp + modulação) → delay → reverb
+// MARK: - Cadeia de efeitos: ruído → gate → EQ → compressor → guitarra (drive + amp + modulação) → delay → reverb
 
 final class StudioEffectChain {
+    /// Redução de ruído ao vivo (AU próprio). Só atua em cadeias ao vivo (monitoramento, Loop);
+    /// nas faixas do Estúdio a limpeza é feita na gravação (cópia), então aqui fica desligada.
+    let noise: AVAudioUnitEffect
+    let liveNoise: Bool
+    private var appliedProfile: [Float]?
     let gate: AVAudioUnitEffect
     let eq: AVAudioUnitEQ
     let compressor: AVAudioUnitEffect
@@ -62,7 +67,11 @@ final class StudioEffectChain {
     let delay: AVAudioUnitDelay
     let reverb: AVAudioUnitReverb
 
-    init() {
+    init(liveNoise: Bool = false) {
+        self.liveNoise = liveNoise
+        PestanaNoiseAU.registerIfNeeded()
+        noise = AVAudioUnitEffect(audioComponentDescription: PestanaNoiseAU.pestanaComponentDescription())
+        noise.bypass = true
         gate = AVAudioUnitEffect(audioComponentDescription: StudioAudioUnits.dynamicsDescription)
         eq = AVAudioUnitEQ(numberOfBands: 3)
         compressor = AVAudioUnitEffect(audioComponentDescription: StudioAudioUnits.dynamicsDescription)
@@ -95,7 +104,7 @@ final class StudioEffectChain {
         high.bypass = false
     }
 
-    var nodes: [AVAudioNode] { [gate, eq, compressor, guitar, delay, reverb] }
+    var nodes: [AVAudioNode] { [noise, gate, eq, compressor, guitar, delay, reverb] }
 
     private var guitarUnit: PestanaGuitarAU? { guitar.auAudioUnit as? PestanaGuitarAU }
     /// Modelo .nam carregado agora (para não reler o arquivo a cada ajuste).
@@ -116,6 +125,7 @@ final class StudioEffectChain {
 
     /// Aplica as configurações ao vivo. `extraGainDB` (>0 quando volume > 1) vai no ganho global do EQ.
     func apply(_ s: EffectSettings, extraGainDB: Float = 0) {
+        applyNoise(s)
         applyGate(s)
         applyEQ(s, extraGainDB: extraGainDB)
         applyCompressor(s)
@@ -123,6 +133,45 @@ final class StudioEffectChain {
         applyDelay(s)
         reverb.wetDryMix = Self.clamp(s.reverbMix, 0, 1) * 100
         reverb.bypass = s.reverbMix <= 0.001
+    }
+
+    private var noiseUnit: PestanaNoiseAU? { noise.auAudioUnit as? PestanaNoiseAU }
+    private var learningNoise = false
+
+    private func applyNoise(_ s: EffectSettings) {
+        guard let unit = noiseUnit else { noise.bypass = true; return }
+        unit.setAmount(Self.clamp(s.noiseAmount, 0, 1))
+        if s.noiseProfile != appliedProfile {
+            appliedProfile = s.noiseProfile
+            unit.setProfile(s.noiseProfile?.map { NSNumber(value: $0) })
+        }
+        if learningNoise { return }
+        noise.bypass = !(liveNoise && s.noiseEnabled && s.noiseProfile != nil)
+    }
+
+    /// Atraso (amostras) que a redução de ruído acrescenta agora (0 quando desligada).
+    var noiseLatencySamples: Int {
+        guard !noise.bypass, let unit = noiseUnit else { return 0 }
+        return unit.latencySamples
+    }
+
+    /// Aprende o ruído com `seconds` de silêncio e devolve o perfil (na thread principal).
+    func learnNoise(seconds: Double = 1.5, completion: @escaping ([Float]?, Double) -> Void) {
+        guard let unit = noiseUnit else { completion(nil, 0); return }
+        learningNoise = true
+        noise.bypass = false
+        unit.startLearningSeconds(seconds)
+        let started = Date()
+        func poll() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                guard let self else { return }
+                if unit.isLearning && Date().timeIntervalSince(started) < seconds + 3 { poll(); return }
+                self.learningNoise = false
+                let profile: [Float]? = unit.isLearning ? nil : unit.currentProfile()?.map { $0.floatValue }
+                completion(profile, unit.sampleRate)
+            }
+        }
+        poll()
     }
 
     private func applyGate(_ s: EffectSettings) {

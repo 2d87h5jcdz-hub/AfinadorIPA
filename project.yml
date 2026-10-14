@@ -44,7 +44,7 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: Afinador/Afinador-Bridging-Header.h
         CLANG_CXX_LANGUAGE_STANDARD: c++20
         CLANG_CXX_LIBRARY: libc++
-        HEADER_SEARCH_PATHS: ["$(SRCROOT)/Vendor", "$(SRCROOT)/Vendor/NAM", "$(SRCROOT)/Vendor/eigen", "$(SRCROOT)/Vendor/nlohmann", "$(SRCROOT)/Afinador/GuitarFX", "$(SRCROOT)/Afinador/Looper"]
+        HEADER_SEARCH_PATHS: ["$(SRCROOT)/Vendor", "$(SRCROOT)/Vendor/NAM", "$(SRCROOT)/Vendor/eigen", "$(SRCROOT)/Vendor/nlohmann", "$(SRCROOT)/Afinador/GuitarFX", "$(SRCROOT)/Afinador/Looper", "$(SRCROOT)/Afinador/Noise"]
         GCC_PREPROCESSOR_DEFINITIONS: ["$(inherited)", "NAM_SAMPLE_FLOAT=1", "NAM_ENABLE_A2_FAST=1"]
         # C++ do amplificador roda em tempo real: otimização máxima (o padrão do Release é -Os).
         GCC_OPTIMIZATION_LEVEL: "3"

@@ -110,7 +110,9 @@ struct StudioProjectView: View {
             StudioEffectsSheet(
                 title: "Efeitos ao vivo",
                 subtitle: "O que você ouve no fone e o que vai para a próxima gravação.",
-                settings: $studio.monitorEffects
+                settings: $studio.monitorEffects,
+                noiseLearning: studio.learningNoise,
+                onLearnNoise: { studio.learnMonitorNoise() }
             )
         case .track(let id):
             StudioEffectsSheet(

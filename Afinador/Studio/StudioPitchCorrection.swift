@@ -17,6 +17,10 @@ import Accelerate
 //
 // O arquivo original nunca é alterado: o resultado vai para "<arquivo>.tune-<assinatura>.caf"
 // na pasta do projeto e a reprodução/exportação usam essa cópia quando ela existe.
+//
+// A mesma cópia também leva a REDUÇÃO DE RUÍDO da faixa (EffectSettings.noise*): primeiro limpa
+// (NoiseReducer, FFT 2048, sem atraso; perfil aprendido ao vivo ou estimado do silêncio da própria
+// gravação) e depois afina, se a afinação estiver ligada. A assinatura junta as duas partes.
 
 enum PitchScale: String, Codable, CaseIterable, Identifiable {
     case major, minor, chromatic
@@ -93,6 +97,28 @@ struct PitchCorrection: Codable, Equatable {
 // MARK: - Arquivos corrigidos
 
 enum StudioPitchFiles {
+    /// Assinatura do processamento da faixa (afinação + ruído). nil = nada a fazer ou tom ainda desconhecido.
+    static func processSignature(pitch: PitchCorrection, noise: Float?) -> String? {
+        var parts: String = ""
+        if pitch.enabled {
+            guard let sig = pitch.signature else { return nil }
+            parts += sig
+        }
+        if let noise {
+            parts += "n\(Int((min(max(noise, 0), 1) * 100).rounded()))"
+        }
+        return parts.isEmpty ? nil : parts
+    }
+
+    static func processSignature(for track: StudioTrack) -> String? {
+        processSignature(pitch: track.pitch, noise: track.effects.noiseCleanupLevel)
+    }
+
+    /// A faixa precisa de cópia processada (afinação e/ou ruído)?
+    static func needsProcessing(_ track: StudioTrack) -> Bool {
+        track.pitch.enabled || track.effects.noiseCleanupLevel != nil
+    }
+
     static func tunedName(source: String, signature: String) -> String {
         "\(source).tune-\(signature).caf"
     }
@@ -101,7 +127,7 @@ enum StudioPitchFiles {
 
     /// Clips como devem TOCAR: com a afinação ligada e o arquivo corrigido pronto, aponta para ele.
     static func playbackClips(for track: StudioTrack, folder: URL) -> [StudioClip] {
-        guard track.effectsOn, let signature = track.pitch.signature else { return track.clips }
+        guard track.effectsOn, let signature = processSignature(for: track) else { return track.clips }
         let fm = FileManager.default
         return track.clips.map { clip in
             let tuned: String = tunedName(source: clip.fileName, signature: signature)
@@ -114,7 +140,7 @@ enum StudioPitchFiles {
 
     /// Todos os arquivos já corrigidos existem?
     static func isReady(track: StudioTrack, folder: URL) -> Bool {
-        guard let signature = track.pitch.signature else { return false }
+        guard let signature = processSignature(for: track) else { return false }
         let fm = FileManager.default
         let sources: Set<String> = Set(track.clips.map(\.fileName))
         return sources.allSatisfy { fm.fileExists(atPath: folder.appendingPathComponent(tunedName(source: $0, signature: signature)).path) }
@@ -144,13 +170,14 @@ enum StudioPitchJob {
 
     /// Analisa (se precisar descobrir o tom) e gera as cópias corrigidas que faltam.
     static func run(folder: URL, sources: [String], settings: PitchCorrection,
+                    noise: Float? = nil, learnedProfile: [Float]? = nil, learnedRate: Double? = nil,
                     progress: (Double) -> Void, isCancelled: () -> Bool) -> Outcome {
         var outcome = Outcome()
         var cache: [String: StudioPitchDSP.Analysis] = [:]
         var key: Int? = settings.resolvedKey
         var scale: PitchScale = settings.resolvedScale
 
-        if key == nil {
+        if settings.enabled && key == nil {
             // Descobre o tom pela voz de todos os trechos da faixa.
             var all: [Float] = []
             for (i, source) in sources.enumerated() {
@@ -170,21 +197,35 @@ enum StudioPitchJob {
             outcome.detectedKey = found.key
             outcome.detectedScale = found.scale
         }
-        guard let resolvedKey = key else { return outcome }
-
         var resolved = settings
-        resolved.key = resolvedKey
-        resolved.scale = scale
-        guard let signature = resolved.signature else { return outcome }
+        if settings.enabled {
+            guard let resolvedKey = key else { return outcome }
+            resolved.key = resolvedKey
+            resolved.scale = scale
+        }
+        guard let signature = StudioPitchFiles.processSignature(pitch: resolved, noise: noise) else { return outcome }
 
-        let base: Double = settings.resolvedKey == nil ? 0.4 : 0
+        let base: Double = (settings.enabled && settings.resolvedKey == nil) ? 0.4 : 0
         for (i, source) in sources.enumerated() {
             if isCancelled() { return outcome }
             let dest: URL = folder.appendingPathComponent(StudioPitchFiles.tunedName(source: source, signature: signature))
             if !FileManager.default.fileExists(atPath: dest.path) {
-                StudioPitchDSP.process(source: folder.appendingPathComponent(source), destination: dest,
-                                       key: resolvedKey, scale: scale, strength: settings.strength,
-                                       analysis: cache[source], isCancelled: isCancelled)
+                let url: URL = folder.appendingPathComponent(source)
+                if let noise {
+                    guard var audio = StudioPitchDSP.load(url) else { continue }
+                    StudioPitchDSP.denoise(&audio, amount: noise, learned: learnedProfile, learnedRate: learnedRate)
+                    if isCancelled() { return outcome }
+                    if settings.enabled, let k = resolved.resolvedKey {
+                        StudioPitchDSP.process(audio: audio, destination: dest, key: k, scale: resolved.resolvedScale,
+                                               strength: settings.strength, analysis: cache[source], isCancelled: isCancelled)
+                    } else {
+                        StudioPitchDSP.write(audio.channels, format: audio.format, to: dest)
+                    }
+                } else if let k = resolved.resolvedKey {
+                    StudioPitchDSP.process(source: url, destination: dest,
+                                           key: k, scale: resolved.resolvedScale, strength: settings.strength,
+                                           analysis: cache[source], isCancelled: isCancelled)
+                }
             }
             StudioPitchFiles.removeStale(source: source, keeping: signature, folder: folder)
             progress(base + (1 - base) * Double(i + 1) / Double(max(sources.count, 1)))
@@ -241,6 +282,33 @@ enum StudioPitchDSP {
     static func process(source: URL, destination: URL, key: Int, scale: PitchScale, strength: Float,
                         analysis cached: Analysis?, isCancelled: () -> Bool) -> Bool {
         guard let audio = load(source) else { return false }
+        return process(audio: audio, destination: destination, key: key, scale: scale, strength: strength,
+                       analysis: cached, isCancelled: isCancelled)
+    }
+
+    /// Redução de ruído no lugar (todos os canais; recalcula o mono).
+    static func denoise(_ audio: inout Audio, amount: Float, learned: [Float]?, learnedRate: Double?) {
+        let datas: [NSMutableData] = audio.channels.map { samples in
+            samples.withUnsafeBufferPointer { NSMutableData(bytes: $0.baseAddress, length: $0.count * MemoryLayout<Float>.size) }
+        }
+        PestanaNoiseAU.denoiseChannels(datas, sampleRate: audio.sampleRate, amount: amount,
+                                       learnedProfile: learned?.map { NSNumber(value: $0) },
+                                       learnedRate: learnedRate ?? 0)
+        let count: Int = audio.mono.count
+        var mono = [Float](repeating: 0, count: count)
+        let scale: Float = 1 / Float(max(1, datas.count))
+        for (ch, data) in datas.enumerated() {
+            let samples: [Float] = Array(UnsafeBufferPointer(start: data.bytes.assumingMemoryBound(to: Float.self),
+                                                             count: data.length / MemoryLayout<Float>.size))
+            audio.channels[ch] = samples
+            for i in 0..<min(count, samples.count) { mono[i] += samples[i] * scale }
+        }
+        audio.mono = mono
+    }
+
+    @discardableResult
+    static func process(audio: Audio, destination: URL, key: Int, scale: PitchScale, strength: Float,
+                        analysis cached: Analysis?, isCancelled: () -> Bool) -> Bool {
         let analysis: Analysis = cached ?? analyze(mono: audio.mono, sampleRate: audio.sampleRate)
         if isCancelled() { return false }
         let curve: [Float] = correction(analysis.midi, key: key, scale: scale, strength: strength)
@@ -253,7 +321,8 @@ enum StudioPitchDSP {
         return write(output, format: audio.format, to: destination)
     }
 
-    private static func write(_ channels: [[Float]], format: AVAudioFormat, to url: URL) -> Bool {
+    @discardableResult
+    static func write(_ channels: [[Float]], format: AVAudioFormat, to url: URL) -> Bool {
         guard let first = channels.first, !first.isEmpty else { return false }
         let count = first.count
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)),

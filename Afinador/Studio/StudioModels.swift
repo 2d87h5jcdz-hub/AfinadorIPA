@@ -136,9 +136,16 @@ enum EffectPreset: String, Codable, CaseIterable, Identifiable {
 }
 
 /// Cadeia de efeitos de uma faixa (e do monitoramento ao vivo).
-/// Ordem no motor: noise gate → EQ (3 bandas) → compressor → distorção → guitarra (amp NAM + modulação) → delay → reverb.
+/// Ordem no motor: redução de ruído → noise gate → EQ (3 bandas) → compressor → guitarra (drive + amp NAM + modulação) → delay → reverb.
 struct EffectSettings: Codable, Equatable {
     var preset: EffectPreset = .none
+    /// Redução de ruído (ar-condicionado, ventilador, rua ao longe). Fora dos presets.
+    /// Ao vivo usa o perfil aprendido (`noiseProfile`, FFT 512 na taxa `noiseProfileRate`); nas
+    /// faixas do Estúdio a limpeza é feita na gravação (cópia), com esse perfil ou estimando do silêncio.
+    var noiseEnabled = false
+    var noiseAmount: Float = 0.5         // 0 … 1
+    var noiseProfile: [Float]?
+    var noiseProfileRate: Double?
     var gateEnabled = false
     var gateThresholdDB: Float = -50     // -80 … -20
     var eqLowDB: Float = 0               // -12 … +12  (100 Hz, shelf)
@@ -273,6 +280,7 @@ extension EffectSettings {
         case preset, gateEnabled, gateThresholdDB, eqLowDB, eqMidDB, eqHighDB
         case compressorEnabled, compressorAmount, driveAmount, delayMix, delayTime, delayFeedback, reverbMix
         case driveStyle, ampModel, ampInputDB, ampOutputDB, modType, modRate, modDepth, modMix
+        case noiseEnabled, noiseAmount, noiseProfile, noiseProfileRate
     }
 
     /// Limiar do gate dos presets com drive até a v1.2.
@@ -310,6 +318,24 @@ extension EffectSettings {
         modRate = try c.decodeIfPresent(Float.self, forKey: .modRate) ?? modRate
         modDepth = try c.decodeIfPresent(Float.self, forKey: .modDepth) ?? modDepth
         modMix = try c.decodeIfPresent(Float.self, forKey: .modMix) ?? modMix
+        noiseEnabled = try c.decodeIfPresent(Bool.self, forKey: .noiseEnabled) ?? noiseEnabled
+        noiseAmount = try c.decodeIfPresent(Float.self, forKey: .noiseAmount) ?? noiseAmount
+        noiseProfile = try? c.decodeIfPresent([Float].self, forKey: .noiseProfile)
+        noiseProfileRate = try? c.decodeIfPresent(Double.self, forKey: .noiseProfileRate)
+    }
+
+    /// Mantém os ajustes de ruído ao trocar de preset (o ruído é do ambiente, não do timbre).
+    mutating func keepNoise(from other: EffectSettings) {
+        noiseEnabled = other.noiseEnabled
+        noiseAmount = other.noiseAmount
+        noiseProfile = other.noiseProfile
+        noiseProfileRate = other.noiseProfileRate
+    }
+
+    /// Intensidade da limpeza na gravação (nil = desligada).
+    var noiseCleanupLevel: Float? {
+        guard noiseEnabled, noiseAmount > 0.001 else { return nil }
+        return noiseAmount
     }
 }
 

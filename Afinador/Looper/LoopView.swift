@@ -43,7 +43,9 @@ struct LoopView: View {
         .sheet(isPresented: $showEffects) {
             StudioEffectsSheet(title: "Efeitos do Loop",
                                subtitle: "Valem para o que você toca e para o que é gravado nas faixas.",
-                               settings: $looper.effects)
+                               settings: $looper.effects,
+                               noiseLearning: looper.learningNoise,
+                               onLearnNoise: { looper.learnNoise() })
         }
         .confirmationDialog("Apagar todas as faixas?", isPresented: $showClearAll, titleVisibility: .visible) {
             Button("Apagar tudo", role: .destructive) { looper.clearAll() }

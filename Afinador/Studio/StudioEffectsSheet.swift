@@ -10,6 +10,9 @@ struct StudioEffectsSheet: View {
     @Binding var settings: EffectSettings
     /// Seção extra logo abaixo dos presets (ex.: afinação automática das faixas).
     var extraTop: AnyView? = nil
+    /// Ao vivo (monitoramento, Loop): aprendendo o ruído agora? nil = faixa do Estúdio (limpa a gravação).
+    var noiseLearning: Bool? = nil
+    var onLearnNoise: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var ampNames: [String] = StudioAmps.list()
     @State private var showAmpImporter = false
@@ -25,6 +28,7 @@ struct StudioEffectsSheet: View {
                     if let extraTop {
                         extraTop
                     }
+                    noiseSection
                     gateSection
                     eqSection
                     compressorSection
@@ -96,11 +100,55 @@ struct StudioEffectsSheet: View {
             s.ampModel = settings.ampModel
             s.ampInputDB = settings.ampInputDB
             s.ampOutputDB = settings.ampOutputDB
+            s.keepNoise(from: settings)
             settings = s
         }
     }
 
     // MARK: Seções
+
+    private var noiseSection: some View {
+        StudioEffectSection(title: "Redução de ruído", systemImage: "wind") {
+            Toggle(isOn: Binding(get: { settings.noiseEnabled },
+                                 set: { on in var s = settings; s.noiseEnabled = on; settings = s })) {
+                Text("Tirar o ruído do ambiente")
+                    .font(.system(size: 14))
+            }
+            .tint(Color.brass)
+            StudioEffectSlider(label: "Intensidade", value: plainBinding(\.noiseAmount),
+                               range: 0...1, text: percentText(settings.noiseAmount))
+            noiseHelp
+        }
+    }
+
+    @ViewBuilder
+    private var noiseHelp: some View {
+        if let learning = noiseLearning {
+            Button {
+                onLearnNoise?()
+            } label: {
+                Label(learning ? "Ouvindo o ruído… fique em silêncio" : "Aprender o ruído (fique 2 s em silêncio)",
+                      systemImage: learning ? "ear" : "waveform.badge.magnifyingglass")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(learning ? Color.line : Color.brass))
+                    .foregroundColor(learning ? .fg : .bg)
+            }
+            .disabled(learning)
+            Text(settings.noiseProfile == nil
+                 ? "Para ar-condicionado, ventilador, chiado e rua ao longe. Aperte o botão sem tocar nada: o app aprende o ruído e passa a tirar só ele."
+                 : "Ruído aprendido. Se o ambiente mudar (ligou o ar, por exemplo), aprenda de novo.")
+                .font(.system(size: 12))
+                .foregroundColor(.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text("Limpa a gravação desta faixa em segundo plano (o original não muda). Usa o ruído aprendido nos efeitos ao vivo ou, sem ele, os trechos sem som da própria gravação.")
+                .font(.system(size: 12))
+                .foregroundColor(.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 
     private var gateSection: some View {
         StudioEffectSection(title: "Noise gate", systemImage: "waveform.badge.minus") {
@@ -291,7 +339,10 @@ struct StudioEffectsSheet: View {
 
     private var resetButton: some View {
         Button {
-            settings = EffectSettings.preset(.none)
+            var s = EffectSettings.preset(.none)
+            s.noiseProfile = settings.noiseProfile
+            s.noiseProfileRate = settings.noiseProfileRate
+            settings = s
         } label: {
             Label("Tirar todos os efeitos", systemImage: "arrow.counterclockwise")
                 .font(.system(size: 14, weight: .semibold))

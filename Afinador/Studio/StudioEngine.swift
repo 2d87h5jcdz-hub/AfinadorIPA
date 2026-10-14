@@ -63,6 +63,8 @@ final class StudioEngine: ObservableObject {
     @Published var monitorEnabled: Bool = false {
         didSet { monitorDidChange() }
     }
+    /// Aprendendo o ruído do ambiente pela entrada (redução de ruído do monitoramento).
+    @Published private(set) var learningNoise = false
     @Published var monitorEffects: EffectSettings = .preset(.none) {
         didSet { monitorChain?.apply(monitorEffects) }
     }
@@ -930,7 +932,7 @@ final class StudioEngine: ObservableObject {
         boost.bands[0].bypass = true
         boost.globalGain = inputGainDB
         let monitorIn = AVAudioMixerNode()
-        let effects = StudioEffectChain()
+        let effects = StudioEffectChain(liveNoise: true)
         let out = AVAudioMixerNode()
         engine.attach(boost)
         engine.attach(monitorIn)
@@ -992,6 +994,32 @@ final class StudioEngine: ObservableObject {
         let anySolo = project.tracks.contains { $0.isSolo }
         for track in project.tracks {
             chains[track.id]?.apply(track, anySolo: anySolo)
+        }
+    }
+
+    /// Fique em silêncio ~1,5 s: aprende o ruído do ambiente pela entrada e liga a redução de ruído.
+    func learnMonitorNoise() {
+        guard !learningNoise else { return }
+        guard let chain = monitorChain else {
+            lastError = "Abra uma música no Estúdio (com o microfone liberado) para aprender o ruído."
+            return
+        }
+        learningNoise = true
+        chain.learnNoise { [weak self] profile, rate in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.learningNoise = false
+                var s = self.monitorEffects
+                if let profile {
+                    s.noiseProfile = profile
+                    s.noiseProfileRate = rate
+                    s.noiseEnabled = true
+                    self.monitorEffects = s
+                } else {
+                    self.monitorChain?.apply(s)
+                    self.lastError = "Não deu para ouvir o ruído. Confira se a entrada está ligada e tente de novo."
+                }
+            }
         }
     }
 
@@ -1264,8 +1292,8 @@ final class StudioEngine: ObservableObject {
     /// Assinatura da afinação por faixa: se muda, os arquivos tocados mudam (reconstrói o grafo).
     private static func pitchLayout(_ p: StudioProject) -> [UUID: String] {
         var map: [UUID: String] = [:]
-        for track in p.tracks where track.pitch.enabled {
-            map[track.id] = track.effectsOn ? (track.pitch.signature ?? "") : "fx-off"
+        for track in p.tracks where StudioPitchFiles.needsProcessing(track) {
+            map[track.id] = track.effectsOn ? (StudioPitchFiles.processSignature(for: track) ?? "") : "fx-off"
         }
         return map
     }
@@ -1292,17 +1320,21 @@ final class StudioEngine: ObservableObject {
         }
         let folder = StudioStorage.folder(for: project.id)
         var wanted: Set<UUID> = []
-        for track in project.tracks where track.pitch.enabled && !track.clips.isEmpty {
+        for track in project.tracks where StudioPitchFiles.needsProcessing(track) && !track.clips.isEmpty {
             let sources: [String] = Array(Set(track.clips.map(\.fileName))).sorted()
-            let jobKey: String = (track.pitch.signature ?? "detect|\(track.pitch.strength)") + "|" + sources.joined(separator: ",")
-            if track.pitch.signature != nil && StudioPitchFiles.isReady(track: track, folder: folder) {
+            let signature: String? = StudioPitchFiles.processSignature(for: track)
+            let noiseKey: String = track.effects.noiseCleanupLevel.map { "|n\($0)" } ?? ""
+            let jobKey: String = (signature ?? "detect|\(track.pitch.strength)\(noiseKey)") + "|" + sources.joined(separator: ",")
+            if signature != nil && StudioPitchFiles.isReady(track: track, folder: folder) {
                 continue    // tudo pronto
             }
             if pitchFailed.contains(jobKey) { continue }
             wanted.insert(track.id)
             if let running = pitchTasks[track.id], running.key == jobKey { continue }
             pitchTasks[track.id]?.task.cancel()
-            startPitchJob(trackID: track.id, sources: sources, settings: track.pitch, folder: folder, jobKey: jobKey)
+            startPitchJob(trackID: track.id, sources: sources, settings: track.pitch,
+                          noise: track.effects.noiseCleanupLevel, learned: track.effects.noiseProfile,
+                          learnedRate: track.effects.noiseProfileRate, folder: folder, jobKey: jobKey)
         }
         for (id, job) in pitchTasks where !wanted.contains(id) {
             job.task.cancel()
@@ -1312,11 +1344,13 @@ final class StudioEngine: ObservableObject {
     }
 
     private func startPitchJob(trackID: UUID, sources: [String], settings: PitchCorrection,
+                               noise: Float?, learned: [Float]?, learnedRate: Double?,
                                folder: URL, jobKey: String) {
         pitchProgress[trackID] = 0
         let task = Task.detached(priority: .userInitiated) { [weak self] in
             let outcome = StudioPitchJob.run(
                 folder: folder, sources: sources, settings: settings,
+                noise: noise, learnedProfile: learned, learnedRate: learnedRate,
                 progress: { value in
                     Task { @MainActor [weak self] in
                         guard let self, self.pitchTasks[trackID]?.key == jobKey else { return }

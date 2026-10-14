@@ -66,6 +66,7 @@ final class LooperEngine: ObservableObject {
     @Published var effects: EffectSettings {
         didSet {
             effectChain.apply(effects)
+            updateLatency()
             if let data = try? JSONEncoder().encode(effects) {
                 UserDefaults.standard.set(data, forKey: Keys.effects)
             }
@@ -120,7 +121,7 @@ final class LooperEngine: ObservableObject {
     }
 
     private var engine: AVAudioEngine?
-    private let effectChain = StudioEffectChain()
+    private let effectChain = StudioEffectChain(liveNoise: true)
     private let looperNode: AVAudioUnitEffect
     private var looper: PestanaLooperAU? { looperNode.auAudioUnit as? PestanaLooperAU }
     private var boost: AVAudioUnitEQ?
@@ -408,7 +409,9 @@ final class LooperEngine: ObservableObject {
         let s = AVAudioSession.sharedInstance()
         let rate = engine?.outputNode.outputFormat(forBus: 0).sampleRate ?? s.sampleRate
         let roundTrip = s.inputLatency + s.outputLatency + 2 * s.ioBufferDuration
-        let total = max(0, roundTrip + latencyTrimMS / 1000)
+        // A redução de ruído ao vivo atrasa a entrada (≈ 10,7 ms): entra na compensação.
+        let noise = Double(effectChain.noiseLatencySamples) / (rate > 0 ? rate : 48000)
+        let total = max(0, roundTrip + noise + latencyTrimMS / 1000)
         latencyMS = total * 1000
         looper?.setLatencySamples(Int((total * (rate > 0 ? rate : 48000)).rounded()))
     }
@@ -440,6 +443,32 @@ final class LooperEngine: ObservableObject {
     }
 
     func pressSelected() { press(selected) }
+
+    @Published private(set) var learningNoise = false
+
+    /// Fique em silêncio ~1,5 s: aprende o ruído do ambiente e liga a redução de ruído.
+    func learnNoise() {
+        guard !learningNoise else { return }
+        if !running { start() }
+        learningNoise = true
+        effectChain.learnNoise { [weak self] profile, rate in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.learningNoise = false
+                var s = self.effects
+                if let profile {
+                    s.noiseProfile = profile
+                    s.noiseProfileRate = rate
+                    s.noiseEnabled = true
+                    self.effects = s
+                } else {
+                    self.effectChain.apply(s)
+                    self.updateLatency()
+                    self.lastError = "Não deu para ouvir o ruído. Confira se a entrada está ligada e tente de novo."
+                }
+            }
+        }
+    }
 
     func selectNext() {
         selected = (selected + 1) % max(1, trackCount)
