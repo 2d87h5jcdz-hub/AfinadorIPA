@@ -185,6 +185,15 @@ Cada faixa tem seus efeitos, e os mesmos efeitos funcionam ao vivo em **Ouvir a 
 - **Presets prontos:** Violão aço, Violão nylon, Voz, Guitarra limpa, Guitarra drive, **Crunch, Distorção pesada, Fuzz, Solo, Limpa com chorus, Flanger anos 80, Phaser e Tremolo**.
 - **Ajuste manual:** noise gate, equalizador, compressor, drive (estilos distorção, crunch, funk e fuzz), **modulação** (chorus, flanger, phaser e tremolo), delay e reverb.
 
+#### Redução de ruído
+
+Tira ruído constante do ambiente: ar-condicionado, ventilador, chiado da interface, rua ao longe.
+
+- **Ao vivo** (efeitos ao vivo do Estúdio e do Loop): ligue **Redução de ruído** e toque em **Aprender o ruído** sem tocar nada por 2 segundos. O app aprende o ruído e passa a tirar só ele.
+- **Nas faixas gravadas:** ligue nos efeitos da faixa. A limpeza é feita em segundo plano numa cópia (a gravação original não muda), usando o ruído aprendido ou os trechos sem som da própria gravação.
+
+A **Intensidade** controla quanto tirar. Muito alta, a cauda das notas mais baixas também vai embora; o meio-termo costuma ser o melhor. Gente falando ou barulhos que vão e vêm não saem bem com esse método.
+
 #### Afinação automática (voz)
 
 Na tela de efeitos de uma faixa, ligue **Afinação automática**. O app analisa a voz gravada e leva cada nota para o lugar certo de forma **sutil**: mantém o vibrato e a expressão, para não soar como efeito.
