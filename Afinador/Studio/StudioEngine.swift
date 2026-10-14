@@ -9,7 +9,7 @@ import UIKit
 //
 // Grafo ao vivo (um AVAudioEngine recriado sempre que o conjunto de faixas ou a rota muda):
 //
-//   por faixa:  player → conversor(mixer) → gate → EQ → compressor → drive → delay → reverb → mixer da faixa ─┐
+//   por faixa:  player → conversor(mixer) → gate → EQ → compressor → guitarra (drive + amp + modulação) → delay → reverb → mixer da faixa ─┐
 //                                                                                     (volume/pan, tap de nível)│
 //   master:     ┌──────────────────────────────────────────────────────────────────────────────────────────────┘
 //               └→ masterMixer → limitador → mainMixer → saída

@@ -19,6 +19,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) BOOL hasAmpModel;
 
 - (void)setAmpInputDB:(float)inputDB outputDB:(float)outputDB;
+/// style: 0 distorção, 1 crunch, 2 funk, 3 fuzz. amount 0 desliga o drive.
+- (void)setDriveStyle:(NSInteger)style amount:(float)amount;
+@property (nonatomic, readonly) BOOL hasDrive;
 /// type: 0 nenhum, 1 chorus, 2 flanger, 3 phaser, 4 tremolo.
 - (void)setModulationType:(NSInteger)type rate:(float)rate depth:(float)depth mix:(float)mix;
 

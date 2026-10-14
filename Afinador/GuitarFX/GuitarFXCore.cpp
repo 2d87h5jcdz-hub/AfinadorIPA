@@ -33,6 +33,7 @@ void GuitarFXCore::prepare(double sampleRate, int maxFrames, int channels) {
     mDelay[ch].assign(delayLength, 0.0f);
     for (int s = 0; s < 4; s++) mAllpass[ch][s] = 0.0f;
     mPhaserFeedback[ch] = 0.0f;
+    mDriveState[ch] = DriveChannel();
   }
   mDelayWrite = 0;
   if (nam::DSP* model = mModel.load()) {
@@ -82,9 +83,94 @@ void GuitarFXCore::setModulation(int type, float rateHz, float depth, float mix)
   mModMix.store(clampf(mix, 0.0f, 1.0f));
 }
 
+void GuitarFXCore::setDrive(int style, float amount) {
+  mDriveStyle.store(std::max(0, std::min(style, 3)));
+  mDriveAmount.store(clampf(amount, 0.0f, 1.0f));
+}
+
+namespace {
+struct DriveVoice {
+  float minGainDB, maxGainDB;  // ganho antes do saturador (amount 0 → 1)
+  float highPassHz;            // tira grave embolado antes de saturar
+  float toneHz;                // passa-baixas depois (corta o chiado das harmônicas altas)
+  float level;                 // nível de saída
+};
+inline DriveVoice driveVoice(int style) {
+  switch (style) {
+    case DriveCrunch: return {4.0f, 30.0f, 90.0f, 6500.0f, 0.42f};
+    case DriveFunk:   return {0.0f, 18.0f, 160.0f, 8000.0f, 0.70f};
+    case DriveFuzz:   return {18.0f, 50.0f, 60.0f, 3600.0f, 0.34f};
+    default:          return {10.0f, 44.0f, 110.0f, 5200.0f, 0.34f};
+  }
+}
+/// Curvas de saturação. Todas comprimem: quanto mais a nota cai, mais ganho relativo ela recebe,
+/// que é o que dá sustentação (o oposto de x² / x³, que encurtava a nota).
+inline float shape(int style, float x) {
+  switch (style) {
+    case DriveCrunch: {
+      // Assimétrica: o lado negativo satura antes (harmônicas pares, timbre de válvula).
+      return x >= 0.0f ? std::tanh(x) : std::tanh(1.6f * x) / 1.6f;
+    }
+    case DriveFunk:
+      return x / (1.0f + std::fabs(x));
+    case DriveFuzz: {
+      const float bias = 0.3f;
+      float y = std::tanh(1.5f * (x + bias)) - std::tanh(1.5f * bias);
+      return clampf(y, -0.75f, 0.75f) / 0.75f;
+    }
+    default:
+      return std::tanh(x);
+  }
+}
+} // namespace
+
+void GuitarFXCore::processDrive(float* const* channels, int nch, int frames) {
+  const int style = mDriveStyle.load();
+  const float amount = mDriveAmount.load();
+  const DriveVoice v = driveVoice(style);
+  const float targetGain = dbToGain(v.minGainDB + (v.maxGainDB - v.minGainDB) * amount);
+  const float targetLevel = v.level;
+  const float sr = static_cast<float>(mSampleRate);
+  const float hpA = std::exp(-static_cast<float>(kTwoPi) * v.highPassHz / sr);
+  const float lpA = 1.0f - std::exp(-static_cast<float>(kTwoPi) * v.toneHz / sr);
+  const float dcR = 0.995f;
+  const float smooth = 1.0f - std::exp(-1.0f / (0.02f * sr));   // ~20 ms
+
+  float g = mDriveGainSmoothed, lv = mDriveLevelSmoothed;
+  for (int i = 0; i < frames; i++) {
+    g += (targetGain - g) * smooth;
+    lv += (targetLevel - lv) * smooth;
+    for (int ch = 0; ch < nch; ch++) {
+      DriveChannel& st = mDriveState[ch];
+      const float x = channels[ch][i];
+      // passa-altas de 1 polo
+      const float hp = hpA * (st.hpY + x - st.hpX);
+      st.hpX = x; st.hpY = hp;
+      // 2x: satura a amostra do meio e a atual e tira a média (reduz aliasing das harmônicas)
+      const float mid = 0.5f * (st.prev + hp);
+      st.prev = hp;
+      float y = 0.5f * (shape(style, g * mid) + shape(style, g * hp));
+      // tom
+      st.lp1 += lpA * (y - st.lp1);
+      st.lp2 += lpA * (st.lp1 - st.lp2);
+      y = st.lp2;
+      // bloqueio de DC (curvas assimétricas geram DC)
+      const float dc = y - st.dcX + dcR * st.dcY;
+      st.dcX = y; st.dcY = dc;
+      float out = dc * lv;
+      if (!std::isfinite(out)) { out = 0.0f; st = DriveChannel(); }
+      channels[ch][i] = out;
+    }
+  }
+  mDriveGainSmoothed = g;
+  mDriveLevelSmoothed = lv;
+}
+
 void GuitarFXCore::process(float* const* channels, int numChannels, int frames) {
   if (mBypass.load() || numChannels <= 0 || frames <= 0) return;
   const int nch = std::min(numChannels, kMaxChannels);
+
+  if (driveActive()) processDrive(channels, nch, frames);
 
   if (nam::DSP* model = mModel.load()) {
     const float inGain = mInputGain.load();

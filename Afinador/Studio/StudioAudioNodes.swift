@@ -50,14 +50,14 @@ enum StudioAudioUnits {
     }
 }
 
-// MARK: - Cadeia de efeitos: gate → EQ → compressor → drive → guitarra (amp + modulação) → delay → reverb
+// MARK: - Cadeia de efeitos: gate → EQ → compressor → guitarra (drive + amp + modulação) → delay → reverb
 
 final class StudioEffectChain {
     let gate: AVAudioUnitEffect
     let eq: AVAudioUnitEQ
     let compressor: AVAudioUnitEffect
-    let drive: AVAudioUnitDistortion
-    /// Bloco próprio (C++): amplificador neural NAM + chorus/flanger/phaser/tremolo.
+    /// Bloco próprio (C++): drive (saturador) + amplificador neural NAM + chorus/flanger/phaser/tremolo.
+    /// O drive antigo (AVAudioUnitDistortion, presets x²/x³) encurtava a nota; o novo comprime e sustenta.
     let guitar: AVAudioUnitEffect
     let delay: AVAudioUnitDelay
     let reverb: AVAudioUnitReverb
@@ -66,15 +66,13 @@ final class StudioEffectChain {
         gate = AVAudioUnitEffect(audioComponentDescription: StudioAudioUnits.dynamicsDescription)
         eq = AVAudioUnitEQ(numberOfBands: 3)
         compressor = AVAudioUnitEffect(audioComponentDescription: StudioAudioUnits.dynamicsDescription)
-        drive = AVAudioUnitDistortion()
         PestanaGuitarAU.registerIfNeeded()
         guitar = AVAudioUnitEffect(audioComponentDescription: PestanaGuitarAU.pestanaComponentDescription())
         guitar.bypass = true
         delay = AVAudioUnitDelay()
         reverb = AVAudioUnitReverb()
 
-        // Presets carregados uma vez; depois só ajustamos mix/ganho (loadFactoryPreset zera os ajustes).
-        drive.loadFactoryPreset(.multiDistortedCubed)
+        // Preset carregado uma vez; depois só ajustamos o mix (loadFactoryPreset zera os ajustes).
         reverb.loadFactoryPreset(.mediumRoom)
 
         let low = eq.bands[0]
@@ -97,12 +95,11 @@ final class StudioEffectChain {
         high.bypass = false
     }
 
-    var nodes: [AVAudioNode] { [gate, eq, compressor, drive, guitar, delay, reverb] }
+    var nodes: [AVAudioNode] { [gate, eq, compressor, guitar, delay, reverb] }
 
     private var guitarUnit: PestanaGuitarAU? { guitar.auAudioUnit as? PestanaGuitarAU }
     /// Modelo .nam carregado agora (para não reler o arquivo a cada ajuste).
     private var loadedAmp: String?
-    private var driveStyle: DriveStyle = .distortion
 
     /// Anexa e conecta source → efeitos → destination, todos no mesmo formato.
     func install(in engine: AVAudioEngine, from source: AVAudioNode, to destination: AVAudioNode,
@@ -122,7 +119,6 @@ final class StudioEffectChain {
         applyGate(s)
         applyEQ(s, extraGainDB: extraGainDB)
         applyCompressor(s)
-        applyDrive(s)
         applyGuitar(s)
         applyDelay(s)
         reverb.wetDryMix = Self.clamp(s.reverbMix, 0, 1) * 100
@@ -130,14 +126,16 @@ final class StudioEffectChain {
     }
 
     private func applyGate(_ s: EffectSettings) {
-        // Gate = expansor forte abaixo do limiar; compressão desligada (threshold no máximo).
+        // Gate = expansor abaixo do limiar; compressão desligada (threshold no máximo).
+        // Razão e soltura suaves: a cauda da nota desce aos poucos em vez de ser cortada
+        // (com drive, um corte seco fica muito audível).
         let threshold = Self.clamp(s.gateThresholdDB, -80, -20)
         StudioAudioUnits.set(gate, StudioAudioUnits.Dynamics.threshold, 20)
         StudioAudioUnits.set(gate, StudioAudioUnits.Dynamics.headRoom, 5)
         StudioAudioUnits.set(gate, StudioAudioUnits.Dynamics.expansionThreshold, threshold)
-        StudioAudioUnits.set(gate, StudioAudioUnits.Dynamics.expansionRatio, 12)
-        StudioAudioUnits.set(gate, StudioAudioUnits.Dynamics.attackTime, 0.001)
-        StudioAudioUnits.set(gate, StudioAudioUnits.Dynamics.releaseTime, 0.12)
+        StudioAudioUnits.set(gate, StudioAudioUnits.Dynamics.expansionRatio, 4)
+        StudioAudioUnits.set(gate, StudioAudioUnits.Dynamics.attackTime, 0.002)
+        StudioAudioUnits.set(gate, StudioAudioUnits.Dynamics.releaseTime, 0.35)
         StudioAudioUnits.set(gate, StudioAudioUnits.Dynamics.overallGain, 0)
         gate.bypass = !s.gateEnabled
     }
@@ -182,24 +180,9 @@ final class StudioEffectChain {
             }
         }
         unit.setAmpInputDB(Self.clamp(s.ampInputDB, -12, 12), outputDB: Self.clamp(s.ampOutputDB, -12, 12))
+        unit.setDriveStyle(s.driveStyle.rawValue, amount: Self.clamp(s.driveAmount, 0, 1))
         unit.setModulationType(s.modType.rawValue, rate: s.modRate, depth: s.modDepth, mix: s.modMix)
-        guitar.bypass = !(unit.hasAmpModel || s.modType != .none)
-    }
-
-    private func applyDrive(_ s: EffectSettings) {
-        if s.driveStyle != driveStyle {
-            driveStyle = s.driveStyle
-            switch s.driveStyle {
-            case .distortion: drive.loadFactoryPreset(.multiDistortedCubed)
-            case .crunch: drive.loadFactoryPreset(.multiDistortedSquared)
-            case .funk: drive.loadFactoryPreset(.multiDistortedFunk)
-            case .fuzz: drive.loadFactoryPreset(.multiDecimated2)
-            }
-        }
-        let d = Self.clamp(s.driveAmount, 0, 1)
-        drive.preGain = -12 + 24 * d          // -80 … 20 dB
-        drive.wetDryMix = 15 + 70 * d         // %
-        drive.bypass = d <= 0.001
+        guitar.bypass = !(unit.hasDrive || unit.hasAmpModel || s.modType != .none)
     }
 
     private func applyDelay(_ s: EffectSettings) {

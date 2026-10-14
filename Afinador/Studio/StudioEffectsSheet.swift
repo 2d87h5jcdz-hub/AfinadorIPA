@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 // MARK: - Folha de efeitos (faixa ou monitoramento)
-// Ordem no motor: noise gate → EQ → compressor → drive → delay → reverb.
+// Ordem no motor: noise gate → EQ → compressor → guitarra (drive + amp + modulação) → delay → reverb.
 
 struct StudioEffectsSheet: View {
     let title: String

@@ -151,7 +151,7 @@ struct EffectSettings: Codable, Equatable {
     var delayTime: Float = 0.35          // s
     var delayFeedback: Float = 0.3       // 0 … 0.9
     var reverbMix: Float = 0             // 0 … 1
-    /// Estilo do drive (preset de fábrica da distorção da Apple).
+    /// Estilo do drive (saturador do bloco Guitarra, em C++).
     var driveStyle: DriveStyle = .distortion
     /// Bloco Guitarra: amplificador neural (.nam importado, nome do arquivo em Amps/) e ganhos.
     var ampModel: String?
@@ -189,27 +189,27 @@ struct EffectSettings: Codable, Equatable {
             s.compressorEnabled = true; s.compressorAmount = 0.5
             s.delayMix = 0.15; s.reverbMix = 0.2
         case .electricDrive:
-            s.gateEnabled = true; s.gateThresholdDB = -48
+            s.gateEnabled = true; s.gateThresholdDB = -62
             s.eqLowDB = 2; s.eqMidDB = 3; s.eqHighDB = 1
             s.driveAmount = 0.6; s.reverbMix = 0.15
         case .crunch:
-            s.gateEnabled = true; s.gateThresholdDB = -52
+            s.gateEnabled = true; s.gateThresholdDB = -62
             s.eqLowDB = 1; s.eqMidDB = 2; s.eqHighDB = 1.5
             s.driveStyle = .crunch; s.driveAmount = 0.45
             s.reverbMix = 0.15
         case .highGain:
-            s.gateEnabled = true; s.gateThresholdDB = -45
+            s.gateEnabled = true; s.gateThresholdDB = -60
             s.eqLowDB = 3; s.eqMidDB = -2; s.eqHighDB = 2
             s.driveStyle = .distortion; s.driveAmount = 0.85
             s.compressorEnabled = true; s.compressorAmount = 0.3
             s.reverbMix = 0.12
         case .fuzz:
-            s.gateEnabled = true; s.gateThresholdDB = -48
+            s.gateEnabled = true; s.gateThresholdDB = -60
             s.eqLowDB = 2; s.eqMidDB = 1; s.eqHighDB = -1
             s.driveStyle = .fuzz; s.driveAmount = 0.7
             s.reverbMix = 0.1
         case .solo:
-            s.gateEnabled = true; s.gateThresholdDB = -48
+            s.gateEnabled = true; s.gateThresholdDB = -62
             s.eqLowDB = 0; s.eqMidDB = 3; s.eqHighDB = 1.5
             s.compressorEnabled = true; s.compressorAmount = 0.5
             s.driveStyle = .distortion; s.driveAmount = 0.7
@@ -239,7 +239,7 @@ struct EffectSettings: Codable, Equatable {
     }
 }
 
-/// Estilo do drive (presets de fábrica do AVAudioUnitDistortion).
+/// Estilo do drive (curva de saturação no GuitarFXCore; mesma numeração do DriveType em C++).
 enum DriveStyle: Int, Codable, CaseIterable, Identifiable {
     case distortion = 0, crunch, funk, fuzz
     var id: Int { rawValue }
@@ -248,7 +248,7 @@ enum DriveStyle: Int, Codable, CaseIterable, Identifiable {
         case .distortion: return "Distorção"
         case .crunch: return "Crunch"
         case .funk: return "Funk"
-        case .fuzz: return "Fuzz / lo-fi"
+        case .fuzz: return "Fuzz"
         }
     }
 }
@@ -275,6 +275,11 @@ extension EffectSettings {
         case driveStyle, ampModel, ampInputDB, ampOutputDB, modType, modRate, modDepth, modMix
     }
 
+    /// Limiar do gate dos presets com drive até a v1.2.
+    private static let oldDriveGate: [EffectPreset: Float] = [
+        .electricDrive: -48, .crunch: -52, .highGain: -45, .fuzz: -48, .solo: -48
+    ]
+
     /// Lê projetos antigos: campos que não existiam ficam no padrão.
     init(from decoder: Decoder) throws {
         self.init()
@@ -293,6 +298,11 @@ extension EffectSettings {
         delayFeedback = try c.decodeIfPresent(Float.self, forKey: .delayFeedback) ?? delayFeedback
         reverbMix = try c.decodeIfPresent(Float.self, forKey: .reverbMix) ?? reverbMix
         driveStyle = (try? c.decodeIfPresent(DriveStyle.self, forKey: .driveStyle)) ?? driveStyle
+        // v1.3: os presets com drive tinham o gate alto demais (cortava a cauda da nota).
+        // Se o valor salvo ainda é o antigo do preset, passa para o novo.
+        if let old = Self.oldDriveGate[preset], abs(gateThresholdDB - old) < 0.01 {
+            gateThresholdDB = Self.preset(preset).gateThresholdDB
+        }
         ampModel = try c.decodeIfPresent(String.self, forKey: .ampModel)
         ampInputDB = try c.decodeIfPresent(Float.self, forKey: .ampInputDB) ?? ampInputDB
         ampOutputDB = try c.decodeIfPresent(Float.self, forKey: .ampOutputDB) ?? ampOutputDB

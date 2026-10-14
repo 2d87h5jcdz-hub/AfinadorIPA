@@ -139,6 +139,10 @@ struct RenderScratch {
 
 - (void)setAmpInputDB:(float)inputDB outputDB:(float)outputDB { _core->setAmpGains(inputDB, outputDB); }
 
+- (void)setDriveStyle:(NSInteger)style amount:(float)amount { _core->setDrive((int)style, amount); }
+
+- (BOOL)hasDrive { return _core->driveActive() ? YES : NO; }
+
 - (void)setModulationType:(NSInteger)type rate:(float)rate depth:(float)depth mix:(float)mix {
   _core->setModulation((int)type, rate, depth, mix);
 }
