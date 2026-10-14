@@ -249,6 +249,8 @@ Uma pedaleira de loop para tocar ao vivo: grave uma base, feche o loop e vá som
 4. O alto-falante de cada faixa para ou volta a tocar só ela. O botão grande no topo para ou toca tudo.
 5. Em **Efeitos**, escolha o som (drive, amp, delay, reverb…). O que você toca e o que é gravado saem com esse som.
 
+**Loop automático (mãos livres):** ligue **Loop automático** e escolha o BPM (ou use o **Tap**), o compasso e quantos compassos o ciclo tem. Toque no botão da faixa: a gravação começa depois de um compasso de contagem (ou na primeira nota, com **Ao tocar**) e o loop fecha sozinho no tempo exato. Gravar por cima fica **armado** e entra no começo do próximo ciclo, gravando uma volta. Com **Gravar as faixas em sequência**, cada faixa vazia grava sozinha no ciclo seguinte: é só tocar.
+
 **Pedal Bluetooth:** pedais de virar página funcionam como teclado. → (ou espaço) aperta o botão da faixa selecionada (com borda dourada), ← troca de faixa e segurar ← para ou toca tudo. Num teclado, as teclas 1 a 6 apertam cada faixa e Apagar desfaz.
 
 > Use fone ou uma interface de áudio. Sem fone, o microfone capta o som do alto-falante e ele entra nas camadas. Se as camadas ficarem levemente atrasadas ou adiantadas, ajuste a **Compensação de atraso** em Ajustes.
