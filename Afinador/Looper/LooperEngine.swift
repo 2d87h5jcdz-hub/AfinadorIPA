@@ -65,7 +65,7 @@ final class LooperEngine: ObservableObject {
     }
     @Published var effects: EffectSettings {
         didSet {
-            chain.apply(effects)
+            effectChain.apply(effects)
             if let data = try? JSONEncoder().encode(effects) {
                 UserDefaults.standard.set(data, forKey: Keys.effects)
             }
@@ -120,7 +120,7 @@ final class LooperEngine: ObservableObject {
     }
 
     private var engine: AVAudioEngine?
-    private let chain = StudioEffectChain()
+    private let effectChain = StudioEffectChain()
     private let looperNode: AVAudioUnitEffect
     private var looper: PestanaLooperAU? { looperNode.auAudioUnit as? PestanaLooperAU }
     private var boost: AVAudioUnitEQ?
@@ -281,9 +281,9 @@ final class LooperEngine: ObservableObject {
         newEngine.attach(looperNode)
         newEngine.connect(input, to: eq, format: inFormat)
         newEngine.connect(eq, to: mixer, format: inFormat)
-        chain.install(in: newEngine, from: mixer, to: looperNode, format: format)
+        effectChain.install(in: newEngine, from: mixer, to: looperNode, format: format)
         newEngine.connect(looperNode, to: newEngine.mainMixerNode, format: format)
-        chain.apply(effects)
+        effectChain.apply(effects)
         boost = eq
         monitorIn = mixer
 
@@ -310,7 +310,7 @@ final class LooperEngine: ObservableObject {
         engineConfigCancellable = nil
         guard let old = engine else { return }
         old.stop()
-        for node in chain.nodes + [looperNode] where node.engine === old {
+        for node in effectChain.nodes + [looperNode] where node.engine === old {
             old.detach(node)
         }
         if let boost { old.detach(boost) }
