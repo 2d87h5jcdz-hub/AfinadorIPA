@@ -1,6 +1,6 @@
 # Pestana Estúdio 🎸
 
-App gratuito para iPhone, **sem anúncios**, para quem toca: afinador, acordes, metrônomo, um **estúdio de gravação em camadas** e um **modo treino** com separação de instrumentos por IA, que roda no próprio celular.
+App gratuito para iPhone, **sem anúncios**, para quem toca: afinador, acordes, metrônomo, um **estúdio de gravação em camadas**, um **modo treino** com separação de instrumentos por IA, que roda no próprio celular, e um **Loop** para tocar ao vivo.
 
 <p align="center"><img src="docs/prints/00-capa.jpg" width="820"></p>
 
@@ -36,6 +36,7 @@ A doação é voluntária e não dá direito a recursos extras nem a suporte. É
 - [Metrônomo](#metrônomo)
 - [Estúdio](#estúdio)
 - [Treino](#treino)
+- [Loop](#loop)
 - [Usando na horizontal](#usando-na-horizontal)
 - [Perguntas frequentes](#perguntas-frequentes)
 
@@ -235,6 +236,22 @@ Toque em **Importar música (MP3, M4A, WAV)** e escolha o arquivo no app Arquivo
 - Toque em **Separar instrumentos (IA)**. Leva alguns minutos, porque a IA roda **no próprio iPhone**, sem internet. Deixe o app aberto.
 - Depois, use os atalhos **Karaokê** (sem voz), **Sem violão**, **Tudo**, ou ajuste cada instrumento (voz, bateria, baixo, guitarra, piano, outros).
 - **Usar como base no Estúdio** cria um projeto no Estúdio com a música (ou os instrumentos separados) para você gravar por cima.
+
+---
+
+## Loop
+
+Uma pedaleira de loop para tocar ao vivo: grave uma base, feche o loop e vá somando camadas por cima enquanto toca.
+
+1. Toque no botão redondo da **Faixa 1** para gravar. Toque de novo para fechar o loop: ele já começa a tocar sem parar. Esse primeiro trecho define o **ciclo**.
+2. Grave as outras faixas do mesmo jeito. Elas seguem o ciclo da primeira. Antes de gravar, escolha **×1, ×2 ou ×4** para uma faixa mais longa (por exemplo, uma frase que só se completa em dois ciclos).
+3. Tocar no botão de uma faixa que já toca **grava por cima** (uma camada nova). O botão ↶ desfaz a última camada.
+4. O alto-falante de cada faixa para ou volta a tocar só ela. O botão grande no topo para ou toca tudo.
+5. Em **Efeitos**, escolha o som (drive, amp, delay, reverb…). O que você toca e o que é gravado saem com esse som.
+
+**Pedal Bluetooth:** pedais de virar página funcionam como teclado. → (ou espaço) aperta o botão da faixa selecionada (com borda dourada), ← troca de faixa e segurar ← para ou toca tudo. Num teclado, as teclas 1 a 6 apertam cada faixa e Apagar desfaz.
+
+> Use fone ou uma interface de áudio. Sem fone, o microfone capta o som do alto-falante e ele entra nas camadas. Se as camadas ficarem levemente atrasadas ou adiantadas, ajuste a **Compensação de atraso** em Ajustes.
 
 ---
 

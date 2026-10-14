@@ -19,16 +19,17 @@ Leia antes de qualquer tarefa neste repositório. Resume as decisões e o histó
 
 ## iOS — arquitetura (SwiftUI, iOS 16, Swift 5)
 - Projeto gerado por **XcodeGen** (`project.yml`): target `Afinador`, nome exibido "Pestana", bundle `com.afinador.app`. Bridging header `Afinador/Afinador-Bridging-Header.h`. C++20, `-O3`, `NAM_SAMPLE_FLOAT`.
-- Abas (`Afinador/RootView.swift`): Afinador (`ContentView.swift` + `TunerEngine.swift`, YIN, ponteiro com mola), Acordes, Metrônomo, Estúdio, Treino. `AboutView.swift`: aviso de boas-vindas (gratuito/doação), abre na 1ª vez e pelo ⓘ do Afinador. `statusBarCover()` em todas as abas.
+- Abas (`Afinador/RootView.swift`): Afinador (`ContentView.swift` + `TunerEngine.swift`, YIN, ponteiro com mola; modos Livre/Auto/Por corda), Acordes, Metrônomo, Estúdio, Treino, Loop (6 abas: o iOS põe Treino e Loop em "Mais"). `AboutView.swift`: aviso de boas-vindas (gratuito/doação), abre na 1ª vez e pelo ⓘ do Afinador. `statusBarCover()` em todas as abas.
 - **Estúdio** (`Afinador/Studio/`):
   - `StudioModels.swift`: contrato (`StudioProject/Track/Clip`, `EffectSettings` com decodificação tolerante, presets, `DriveStyle`, `ModulationType`; `StudioTrack.pitch` e `effectsOn` = botão FX).
   - `StudioEngine.swift` (@MainActor): AVAudioEngine, gravação com punch-in, faixa armada, entrada/ganho, jobs de afinação automática (`pitchProgress`).
-  - `StudioAudioNodes.swift`: cadeia gate → EQ → compressor → drive → **guitarra (AU próprio)** → delay → reverb; pistas de clips.
+  - `StudioAudioNodes.swift`: cadeia gate → EQ → compressor → **guitarra (AU próprio: drive + NAM + modulação)** → delay → reverb; pistas de clips.
   - `StudioAudioOffline.swift`: exportação (manual rendering). `StudioEngineSupport.swift`: storage, waveforms (`.peaks`).
   - Linha do tempo: `StudioTimelineView/Lane/Ruler/TrackSheet.swift`. A régua usa o espaço de coordenadas da rolagem; a rolagem automática na borda mexe direto na `UIScrollView` (achada por `StudioScrollViewFinder`) com `CADisplayLink` em `.common`. Isso foi o que funcionou; `scrollTo` + `Timer` padrão não funcionam com o dedo na tela.
   - `StudioPitchCorrection.swift` + `StudioPitchPanel.swift`: afinação automática **offline** (YIN → nota por segmento → TD-PSOLA), gera `<arquivo>.tune-<assinatura>.caf`; o original nunca muda.
   - `StudioAmps.swift`: modelos `.nam` importados em Documentos/Amps.
-- **Bloco Guitarra** (`Afinador/GuitarFX/`): `GuitarFXCore.cpp/.h` (C++ puro: NAM + chorus/flanger/phaser/tremolo) e `PestanaGuitarAU.mm` (AUAudioUnit v3 registrado no app). Código de terceiros em `Vendor/` (NeuralAmpModelerCore MIT, Eigen 3.4 MPL2, nlohmann/json).
+- **Bloco Guitarra** (`Afinador/GuitarFX/`): `GuitarFXCore.cpp/.h` (C++ puro: drive próprio com tanh/curvas por estilo — o AVAudioUnitDistortion x²/x³ encurtava a nota —, NAM e chorus/flanger/phaser/tremolo) e `PestanaGuitarAU.mm` (AUAudioUnit v3 registrado no app). Código de terceiros em `Vendor/` (NeuralAmpModelerCore MIT, Eigen 3.4 MPL2, nlohmann/json).
+- **Loop** (`Afinador/Looper/`): pedaleira de loop ao vivo. `LooperCore.cpp/.h` (C++ puro, testado fora do iOS com cliques e latência simulada): até 6 faixas; a 1ª gravação define o ciclo, as outras têm ×1/×2/×4; cada faixa tem `main` + `layer` (desfazer) + `rec`; escrita em G − L (latência de ida e volta = inLat + outLat + 2·ioBuffer + ajuste fino) com cauda de L amostras; fila de comandos SPSC sem lock e buffers alocados/liberados só na thread principal. `PestanaLooperAU.mm` (AUAudioUnit v3, 'loop'), `LooperEngine.swift` (inputNode → ganho → StudioEffectChain → Loop AU → mainMixer; nós reaproveitados ao recriar o motor, loops sobrevivem se a taxa não mudar), `LoopView.swift` (tela + `PedalCatcher`: teclas de pedal BT/teclado via `pressesBegan`).
 - **Treino** (`Afinador/Practice/`): player com tom/velocidade/A-B e separação Demucs (htdemucs_6s) via Core ML (`DemucsSeparator.swift`, STFT no app). Modelo baixado no CI da Release `demucs-model`.
 
 ## Build, CI e lançamento
