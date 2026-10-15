@@ -136,6 +136,12 @@ struct StudioEffectsSheet: View {
                     .foregroundColor(learning ? .fg : .bg)
             }
             .disabled(learning)
+            if settings.noiseEnabled && settings.noiseProfile == nil && !learning {
+                Text("Falta aprender o ruído: sem isso a redução não age. Aperte o botão acima sem tocar nada.")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.off)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text(settings.noiseProfile == nil
                  ? "Para ar-condicionado, ventilador, chiado e rua ao longe. Aperte o botão sem tocar nada: o app aprende o ruído e passa a tirar só ele."
                  : "Ruído aprendido. Se o ambiente mudar (ligou o ar, por exemplo), aprenda de novo.")

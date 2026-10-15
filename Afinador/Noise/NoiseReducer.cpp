@@ -243,7 +243,8 @@ std::vector<float> NoiseReducer::estimateProfile(const std::vector<std::vector<f
       for (int i = 0; i < mN; i++) e += static_cast<double>(x[i]) * x[i];
     }
     e /= static_cast<double>(mN * nch);
-    if (e > 1e-12) energy.push_back({e, start});     // ignora silêncio digital
+    // Ignora silêncio digital e fades quase mudos (< −75 dBFS): não são o ruído do ambiente.
+    if (e > 3e-8) energy.push_back({e, start});
   }
   if (energy.empty()) return profile;
   std::sort(energy.begin(), energy.end());
