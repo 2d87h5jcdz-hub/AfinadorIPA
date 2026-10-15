@@ -175,6 +175,16 @@ struct StudioEffectsSheet: View {
                                range: -12...12, text: signedDbText(settings.eqMidDB))
             StudioEffectSlider(label: "Agudos · 8 kHz", value: floatBinding(\.eqHighDB),
                                range: -12...12, text: signedDbText(settings.eqHighDB))
+            StudioEffectSlider(label: "Tirar embolado · 300 Hz", value: floatBinding(\.eqMuddyDB),
+                               range: -12...0, text: signedDbText(settings.eqMuddyDB))
+            StudioEffectSlider(label: "Presença · 4 kHz", value: floatBinding(\.eqPresenceDB),
+                               range: -6...8, text: signedDbText(settings.eqPresenceDB))
+            Toggle("Cortar graves abaixo de 80 Hz", isOn: boolBinding(\.eqLowCut))
+                .tint(Color.brass)
+            Text("Microfone de estúdio muito perto engorda os médios graves (efeito de proximidade). Tire o embolado e dê presença, ou use o preset Microfone de perto.")
+                .font(.system(size: 12))
+                .foregroundColor(.muted)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

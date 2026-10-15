@@ -73,7 +73,7 @@ final class StudioEffectChain {
         noise = AVAudioUnitEffect(audioComponentDescription: PestanaNoiseAU.pestanaComponentDescription())
         noise.bypass = true
         gate = AVAudioUnitEffect(audioComponentDescription: StudioAudioUnits.dynamicsDescription)
-        eq = AVAudioUnitEQ(numberOfBands: 3)
+        eq = AVAudioUnitEQ(numberOfBands: 6)
         compressor = AVAudioUnitEffect(audioComponentDescription: StudioAudioUnits.dynamicsDescription)
         PestanaGuitarAU.registerIfNeeded()
         guitar = AVAudioUnitEffect(audioComponentDescription: PestanaGuitarAU.pestanaComponentDescription())
@@ -83,6 +83,24 @@ final class StudioEffectChain {
 
         // Preset carregado uma vez; depois só ajustamos o mix (loadFactoryPreset zera os ajustes).
         reverb.loadFactoryPreset(.mediumRoom)
+
+        // Bandas extras (v1.4): corte de graves, "tirar embolado" e presença.
+        let lowCut = eq.bands[3]
+        lowCut.filterType = .highPass
+        lowCut.frequency = 80
+        lowCut.bypass = true
+        let muddy = eq.bands[4]
+        muddy.filterType = .parametric
+        muddy.frequency = 300
+        muddy.bandwidth = 1.2
+        muddy.gain = 0
+        muddy.bypass = false
+        let presence = eq.bands[5]
+        presence.filterType = .parametric
+        presence.frequency = 4000
+        presence.bandwidth = 1.4
+        presence.gain = 0
+        presence.bypass = false
 
         let low = eq.bands[0]
         low.filterType = .lowShelf
@@ -197,8 +215,14 @@ final class StudioEffectChain {
         eq.bands[0].gain = lowGain
         eq.bands[1].gain = midGain
         eq.bands[2].gain = highGain
+        let muddyGain = Self.clamp(s.eqMuddyDB, -12, 0)
+        let presenceGain = Self.clamp(s.eqPresenceDB, -6, 8)
+        eq.bands[3].bypass = !s.eqLowCut
+        eq.bands[4].gain = muddyGain
+        eq.bands[5].gain = presenceGain
         eq.globalGain = global
         let flat = abs(lowGain) < 0.05 && abs(midGain) < 0.05 && abs(highGain) < 0.05 && abs(global) < 0.05
+            && !s.eqLowCut && abs(muddyGain) < 0.05 && abs(presenceGain) < 0.05
         eq.bypass = flat
     }
 

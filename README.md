@@ -185,6 +185,10 @@ Cada faixa tem seus efeitos, e os mesmos efeitos funcionam ao vivo em **Ouvir a 
 - **Presets prontos:** Violão aço, Violão nylon, Voz, Guitarra limpa, Guitarra drive, **Crunch, Distorção pesada, Fuzz, Solo, Limpa com chorus, Flanger anos 80, Phaser e Tremolo**.
 - **Ajuste manual:** noise gate, equalizador, compressor, drive (estilos distorção, crunch, funk e fuzz), **modulação** (chorus, flanger, phaser e tremolo), delay e reverb.
 
+#### Equalizador e microfone de perto
+
+Além de graves, médios e agudos, o EQ tem **Tirar embolado** (300 Hz), **Presença** (4 kHz) e **Cortar graves abaixo de 80 Hz**. Microfone de estúdio muito perto (uns 10 cm) reforça os médios graves e o som fica embolado, mesmo sem ruído nenhum. O preset **Microfone de perto** já vem ajustado para isso.
+
 #### Redução de ruído
 
 Tira ruído constante do ambiente: ar-condicionado, ventilador, chiado da interface, rua ao longe.

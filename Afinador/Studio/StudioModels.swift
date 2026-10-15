@@ -108,7 +108,7 @@ struct StudioProject: Identifiable, Codable, Equatable {
 
 /// Presets prontos de efeito.
 enum EffectPreset: String, Codable, CaseIterable, Identifiable {
-    case none, steelGuitar, nylonGuitar, vocal, electricClean, electricDrive
+    case none, steelGuitar, nylonGuitar, vocal, closeMic, electricClean, electricDrive
     // Guitarra (v3): drives com estilos diferentes e modulações.
     case crunch, highGain, fuzz, solo, cleanChorus, flanger80, phaser, tremolo
     case custom
@@ -120,6 +120,7 @@ enum EffectPreset: String, Codable, CaseIterable, Identifiable {
         case .steelGuitar: return "Violão aço"
         case .nylonGuitar: return "Violão nylon"
         case .vocal: return "Voz"
+        case .closeMic: return "Microfone de perto"
         case .electricClean: return "Guitarra limpa"
         case .electricDrive: return "Guitarra drive"
         case .crunch: return "Crunch"
@@ -151,6 +152,12 @@ struct EffectSettings: Codable, Equatable {
     var eqLowDB: Float = 0               // -12 … +12  (100 Hz, shelf)
     var eqMidDB: Float = 0               // -12 … +12  (1 kHz, bell)
     var eqHighDB: Float = 0              // -12 … +12  (8 kHz, shelf)
+    /// Corta abaixo de 80 Hz (ronco, pancadas no pedestal, excesso de grave do microfone de perto).
+    var eqLowCut = false
+    /// "Tirar embolado": sino em 300 Hz (-12 … 0). Microfone muito perto reforça essa região.
+    var eqMuddyDB: Float = 0
+    /// Presença: sino em 4 kHz (-6 … +8). Devolve clareza e definição.
+    var eqPresenceDB: Float = 0
     var compressorEnabled = false
     var compressorAmount: Float = 0.5    // 0 … 1  (motor mapeia para threshold/ratio)
     var driveAmount: Float = 0           // 0 … 1  (0 = desligado)
@@ -191,6 +198,11 @@ struct EffectSettings: Codable, Equatable {
             s.compressorEnabled = true; s.compressorAmount = 0.6
             s.delayMix = 0.08; s.delayTime = 0.28; s.delayFeedback = 0.2
             s.reverbMix = 0.18
+        case .closeMic:
+            // Microfone de estúdio a ~10 cm: o efeito de proximidade engorda 100–400 Hz.
+            s.eqLowCut = true; s.eqMuddyDB = -6; s.eqPresenceDB = 4; s.eqHighDB = 2
+            s.compressorEnabled = true; s.compressorAmount = 0.3
+            s.reverbMix = 0.12
         case .electricClean:
             s.eqLowDB = 0; s.eqMidDB = 2; s.eqHighDB = 2
             s.compressorEnabled = true; s.compressorAmount = 0.5
@@ -281,6 +293,7 @@ extension EffectSettings {
         case compressorEnabled, compressorAmount, driveAmount, delayMix, delayTime, delayFeedback, reverbMix
         case driveStyle, ampModel, ampInputDB, ampOutputDB, modType, modRate, modDepth, modMix
         case noiseEnabled, noiseAmount, noiseProfile, noiseProfileRate
+        case eqLowCut, eqMuddyDB, eqPresenceDB
     }
 
     /// Limiar do gate dos presets com drive até a v1.2.
@@ -318,6 +331,9 @@ extension EffectSettings {
         modRate = try c.decodeIfPresent(Float.self, forKey: .modRate) ?? modRate
         modDepth = try c.decodeIfPresent(Float.self, forKey: .modDepth) ?? modDepth
         modMix = try c.decodeIfPresent(Float.self, forKey: .modMix) ?? modMix
+        eqLowCut = try c.decodeIfPresent(Bool.self, forKey: .eqLowCut) ?? eqLowCut
+        eqMuddyDB = try c.decodeIfPresent(Float.self, forKey: .eqMuddyDB) ?? eqMuddyDB
+        eqPresenceDB = try c.decodeIfPresent(Float.self, forKey: .eqPresenceDB) ?? eqPresenceDB
         noiseEnabled = try c.decodeIfPresent(Bool.self, forKey: .noiseEnabled) ?? noiseEnabled
         noiseAmount = try c.decodeIfPresent(Float.self, forKey: .noiseAmount) ?? noiseAmount
         noiseProfile = try? c.decodeIfPresent([Float].self, forKey: .noiseProfile)
